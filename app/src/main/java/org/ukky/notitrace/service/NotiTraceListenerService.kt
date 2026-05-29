@@ -35,7 +35,7 @@ class NotiTraceListenerService : NotificationListenerService() {
         scope.launch {
             try {
                 val entity = NotificationExtractor.extract(sbn)
-                repository.upsert(entity)
+                repository.save(entity)
             } catch (e: Exception) {
                 // サービスクラッシュを防ぐ。ログは端末の logcat に残る。
                 android.util.Log.e("NotiTraceListener", "Failed to save notification", e)
@@ -52,4 +52,3 @@ class NotiTraceListenerService : NotificationListenerService() {
         scope.cancel()
     }
 }
-

@@ -73,7 +73,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * 通知ログを JSONL 形式でエクスポートする（集約済み）。
+     * 通知データを JSONL 形式でエクスポートする。
      */
     fun exportJsonl(context: Context, uri: Uri, tag: String?) {
         viewModelScope.launch {

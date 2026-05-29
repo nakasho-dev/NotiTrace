@@ -47,6 +47,7 @@ object DatabaseProvider {
                 NotiTraceDatabase.MIGRATION_1_3,
                 NotiTraceDatabase.MIGRATION_3_4,
                 NotiTraceDatabase.MIGRATION_4_5,
+                NotiTraceDatabase.MIGRATION_5_6,
             )
             .build()
     }
@@ -70,4 +71,3 @@ object DatabaseProvider {
         }
     }
 }
-

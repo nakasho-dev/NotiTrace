@@ -1,0 +1,300 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 6,
+    "identityHash": "b85f4f3123a70ed8e482222f2df49325",
+    "entities": [
+      {
+        "tableName": "notifications",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `package_name` TEXT NOT NULL, `title` TEXT, `text` TEXT, `big_text` TEXT, `sub_text` TEXT, `ticker` TEXT, `extras_json` TEXT NOT NULL DEFAULT '{}', `raw_json` TEXT NOT NULL DEFAULT '{}', `signature` TEXT NOT NULL, `notification_type` TEXT NOT NULL DEFAULT 'local', `is_remote` INTEGER NOT NULL DEFAULT 0, `receive_count` INTEGER NOT NULL DEFAULT 1, `first_received_at` INTEGER NOT NULL, `last_received_at` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packageName",
+            "columnName": "package_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "bigText",
+            "columnName": "big_text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "subText",
+            "columnName": "sub_text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "ticker",
+            "columnName": "ticker",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "extrasJson",
+            "columnName": "extras_json",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'{}'"
+          },
+          {
+            "fieldPath": "rawJson",
+            "columnName": "raw_json",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'{}'"
+          },
+          {
+            "fieldPath": "signature",
+            "columnName": "signature",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notificationType",
+            "columnName": "notification_type",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'local'"
+          },
+          {
+            "fieldPath": "isRemote",
+            "columnName": "is_remote",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "receiveCount",
+            "columnName": "receive_count",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "firstReceivedAt",
+            "columnName": "first_received_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastReceivedAt",
+            "columnName": "last_received_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_notifications_signature",
+            "unique": false,
+            "columnNames": [
+              "signature"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notifications_signature` ON `${TABLE_NAME}` (`signature`)"
+          },
+          {
+            "name": "index_notifications_package_name",
+            "unique": false,
+            "columnNames": [
+              "package_name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notifications_package_name` ON `${TABLE_NAME}` (`package_name`)"
+          },
+          {
+            "name": "index_notifications_last_received_at",
+            "unique": false,
+            "columnNames": [
+              "last_received_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notifications_last_received_at` ON `${TABLE_NAME}` (`last_received_at`)"
+          }
+        ]
+      },
+      {
+        "tableName": "notifications_fts",
+        "createSql": "CREATE VIRTUAL TABLE IF NOT EXISTS `${TABLE_NAME}` USING FTS4(`title` TEXT, `text` TEXT, `big_text` TEXT, `sub_text` TEXT, tokenize=unicode61, content=`notifications`)",
+        "fields": [
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "bigText",
+            "columnName": "big_text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "subText",
+            "columnName": "sub_text",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": []
+        },
+        "ftsVersion": "FTS4",
+        "ftsOptions": {
+          "tokenizer": "unicode61",
+          "tokenizerArgs": [],
+          "contentTable": "notifications",
+          "languageIdColumnName": "",
+          "matchInfo": "FTS4",
+          "notIndexedColumns": [],
+          "prefixSizes": [],
+          "preferredOrder": "ASC"
+        },
+        "contentSyncTriggers": [
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_notifications_fts_BEFORE_UPDATE BEFORE UPDATE ON `notifications` BEGIN DELETE FROM `notifications_fts` WHERE `docid`=OLD.`rowid`; END",
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_notifications_fts_BEFORE_DELETE BEFORE DELETE ON `notifications` BEGIN DELETE FROM `notifications_fts` WHERE `docid`=OLD.`rowid`; END",
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_notifications_fts_AFTER_UPDATE AFTER UPDATE ON `notifications` BEGIN INSERT INTO `notifications_fts`(`docid`, `title`, `text`, `big_text`, `sub_text`) VALUES (NEW.`rowid`, NEW.`title`, NEW.`text`, NEW.`big_text`, NEW.`sub_text`); END",
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_notifications_fts_AFTER_INSERT AFTER INSERT ON `notifications` BEGIN INSERT INTO `notifications_fts`(`docid`, `title`, `text`, `big_text`, `sub_text`) VALUES (NEW.`rowid`, NEW.`title`, NEW.`text`, NEW.`big_text`, NEW.`sub_text`); END"
+        ]
+      },
+      {
+        "tableName": "app_tags",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`package_name` TEXT NOT NULL, `tag` TEXT NOT NULL, `app_label` TEXT, PRIMARY KEY(`package_name`))",
+        "fields": [
+          {
+            "fieldPath": "packageName",
+            "columnName": "package_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tag",
+            "columnName": "tag",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appLabel",
+            "columnName": "app_label",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "package_name"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_app_tags_tag",
+            "unique": false,
+            "columnNames": [
+              "tag"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_app_tags_tag` ON `${TABLE_NAME}` (`tag`)"
+          }
+        ]
+      },
+      {
+        "tableName": "notification_raw_logs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `notification_id` INTEGER NOT NULL, `raw_json` TEXT NOT NULL, `received_at` INTEGER NOT NULL, FOREIGN KEY(`notification_id`) REFERENCES `notifications`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notificationId",
+            "columnName": "notification_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawJson",
+            "columnName": "raw_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receivedAt",
+            "columnName": "received_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_notification_raw_logs_notification_id",
+            "unique": false,
+            "columnNames": [
+              "notification_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notification_raw_logs_notification_id` ON `${TABLE_NAME}` (`notification_id`)"
+          },
+          {
+            "name": "index_notification_raw_logs_received_at",
+            "unique": false,
+            "columnNames": [
+              "received_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notification_raw_logs_received_at` ON `${TABLE_NAME}` (`received_at`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "notifications",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "notification_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b85f4f3123a70ed8e482222f2df49325')"
+    ]
+  }
+}

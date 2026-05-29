@@ -13,7 +13,7 @@ import javax.inject.Singleton
  * 通知データを JSONL（JSON Lines）形式でエクスポートする。
  *
  * 2 つのエクスポートモードを提供する:
- * - [export]: 集約済み通知（従来の 1 通知 = 1 行）
+ * - [export]: 通知データ（1 受信 = 1 通知 = 1 行）
  * - [exportRawLogs]: 受信ごとの生データ（1 受信 = 1 行、受信順）
  */
 @Singleton
@@ -22,7 +22,7 @@ class JsonlExporter @Inject constructor() {
     private val json = Json { encodeDefaults = true }
 
     /**
-     * 集約済み通知を JSONL 形式で [outputStream] に書き出す。
+     * 通知データを JSONL 形式で [outputStream] に書き出す。
      */
     fun export(items: List<NotificationWithTag>, outputStream: OutputStream) {
         val writer = outputStream.bufferedWriter(Charsets.UTF_8)
@@ -73,7 +73,7 @@ class JsonlExporter @Inject constructor() {
 }
 
 /**
- * JSONL エクスポートの 1 行分のデータモデル（集約済み）。
+ * JSONL エクスポートの 1 行分のデータモデル。
  */
 @Serializable
 data class JsonlExportItem(

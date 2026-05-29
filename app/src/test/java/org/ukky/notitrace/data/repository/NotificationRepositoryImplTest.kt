@@ -12,6 +12,7 @@ import org.ukky.notitrace.data.db.dao.NotificationDao
 import org.ukky.notitrace.data.db.dao.NotificationRawLogDao
 import org.ukky.notitrace.data.db.entity.NotificationEntity
 import org.ukky.notitrace.data.db.entity.NotificationRawLogEntity
+import org.ukky.notitrace.data.db.entity.ReceivedNotificationWithTag
 import org.ukky.notitrace.data.db.entity.NotificationWithTag
 import org.ukky.notitrace.data.db.entity.RawLogWithTag
 
@@ -31,74 +32,45 @@ class NotificationRepositoryImplTest {
         repository = NotificationRepositoryImpl(dao, rawLogDao)
     }
 
-    // ── upsert: 新規通知 ──────────────────────────────
+    // ── save ──────────────────────────────────────────
 
     @Test
-    fun `新規signatureの場合INSERTされる`() = runTest {
-        coEvery { dao.findBySignature("new_sig") } returns null
+    fun `通知を保存するとINSERTされる`() = runTest {
         coEvery { dao.insert(any()) } returns 1L
         coEvery { rawLogDao.insert(any()) } returns 1L
 
         val entity = createEntity(signature = "new_sig")
-        repository.upsert(entity)
+        repository.save(entity)
 
         coVerify(exactly = 1) { dao.insert(entity) }
-        coVerify(exactly = 0) { dao.incrementCount(any(), any()) }
     }
 
     @Test
-    fun `新規通知のupsertでrawLogも記録される`() = runTest {
-        coEvery { dao.findBySignature("new_sig") } returns null
+    fun `通知保存でrawLogも記録される`() = runTest {
         coEvery { dao.insert(any()) } returns 42L
         coEvery { rawLogDao.insert(any()) } returns 1L
 
         val entity = createEntity(signature = "new_sig", rawJson = """{"test":"data"}""")
-        repository.upsert(entity)
+        repository.save(entity)
 
         coVerify(exactly = 1) {
             rawLogDao.insert(match {
                 it.notificationId == 42L &&
                     it.rawJson == """{"test":"data"}""" &&
-                    it.receivedAt == entity.firstReceivedAt
+                    it.receivedAt == entity.lastReceivedAt
             })
         }
     }
 
-    // ── upsert: 重複通知 ──────────────────────────────
-
     @Test
-    fun `既存signatureの場合receiveCountがインクリメントされる`() = runTest {
-        val existing = createEntity(id = 10L, signature = "dup_sig", receiveCount = 3)
-        coEvery { dao.findBySignature("dup_sig") } returns existing
+    fun `同一signatureでも保存のたびにINSERTされる`() = runTest {
+        coEvery { dao.insert(any()) } returnsMany listOf(10L, 11L)
         coEvery { rawLogDao.insert(any()) } returns 1L
 
-        val newEntity = createEntity(signature = "dup_sig", lastReceivedAt = 5000L)
-        repository.upsert(newEntity)
+        repository.save(createEntity(signature = "dup_sig", lastReceivedAt = 4000L))
+        repository.save(createEntity(signature = "dup_sig", lastReceivedAt = 5000L))
 
-        coVerify(exactly = 0) { dao.insert(any()) }
-        coVerify(exactly = 1) { dao.incrementCount("dup_sig", 5000L) }
-    }
-
-    @Test
-    fun `重複通知のupsertでもrawLogが記録される`() = runTest {
-        val existing = createEntity(id = 10L, signature = "dup_sig", receiveCount = 3)
-        coEvery { dao.findBySignature("dup_sig") } returns existing
-        coEvery { rawLogDao.insert(any()) } returns 1L
-
-        val newEntity = createEntity(
-            signature = "dup_sig",
-            lastReceivedAt = 5000L,
-            rawJson = """{"dup":"data"}""",
-        )
-        repository.upsert(newEntity)
-
-        coVerify(exactly = 1) {
-            rawLogDao.insert(match {
-                it.notificationId == 10L &&
-                    it.rawJson == """{"dup":"data"}""" &&
-                    it.receivedAt == 5000L
-            })
-        }
+        coVerify(exactly = 2) { dao.insert(any()) }
     }
 
     // ── 一覧取得 ──────────────────────────────────────
@@ -106,10 +78,10 @@ class NotificationRepositoryImplTest {
     @Test
     fun `全通知をFlowで取得できる`() = runTest {
         val mockList = listOf(
-            NotificationWithTag(createEntity(signature = "s1", title = "通知1"), "SNS", "App1"),
-            NotificationWithTag(createEntity(signature = "s2", title = "通知2"), null, null),
+            receivedNotification(createEntity(signature = "s1", title = "通知1"), rawLogId = 10L, receivedAt = 3000L, tag = "SNS", appLabel = "App1"),
+            receivedNotification(createEntity(signature = "s2", title = "通知2"), rawLogId = 11L, receivedAt = 2000L, tag = null, appLabel = null),
         )
-        every { dao.getAllWithTag() } returns flowOf(mockList)
+        every { dao.getAllReceivedWithTag() } returns flowOf(mockList)
 
         repository.getAllWithTag().test {
             val result = awaitItem()
@@ -126,9 +98,9 @@ class NotificationRepositoryImplTest {
     @Test
     fun `タグで絞り込める`() = runTest {
         val filtered = listOf(
-            NotificationWithTag(createEntity(signature = "f1"), "仕事", "SlackApp"),
+            receivedNotification(createEntity(signature = "f1"), rawLogId = 20L, receivedAt = 4000L, tag = "仕事", appLabel = "SlackApp"),
         )
-        every { dao.getByTag("仕事") } returns flowOf(filtered)
+        every { dao.getReceivedByTag("仕事") } returns flowOf(filtered)
 
         repository.getByTag("仕事").test {
             val result = awaitItem()
@@ -143,9 +115,9 @@ class NotificationRepositoryImplTest {
     @Test
     fun `FTS検索でマッチした通知を取得できる`() = runTest {
         val searchResult = listOf(
-            NotificationWithTag(createEntity(signature = "sr1", title = "東京天気"), null, null),
+            receivedNotification(createEntity(signature = "sr1", title = "東京天気"), rawLogId = 30L, receivedAt = 1000L, tag = null, appLabel = null),
         )
-        every { dao.searchFts("東京") } returns flowOf(searchResult)
+        every { dao.searchReceivedFts("東京") } returns flowOf(searchResult)
 
         repository.search("東京").test {
             val result = awaitItem()
@@ -154,17 +126,17 @@ class NotificationRepositoryImplTest {
             cancelAndIgnoreRemainingEvents()
         }
 
-        verify(exactly = 1) { dao.searchFts("東京") }
-        verify(exactly = 0) { dao.searchPartial(any()) }
+        verify(exactly = 1) { dao.searchReceivedFts("東京") }
+        verify(exactly = 0) { dao.searchReceivedPartial(any()) }
     }
 
     @Test
     fun `FTS検索が0件なら部分一致検索にフォールバックする`() = runTest {
         val fallbackResult = listOf(
-            NotificationWithTag(createEntity(signature = "sr2", title = "東京都"), null, null),
+            receivedNotification(createEntity(signature = "sr2", title = "東京都"), rawLogId = 31L, receivedAt = 1000L, tag = null, appLabel = null),
         )
-        every { dao.searchFts("京") } returns flowOf(emptyList())
-        every { dao.searchPartial("%京%") } returns flowOf(fallbackResult)
+        every { dao.searchReceivedFts("京") } returns flowOf(emptyList())
+        every { dao.searchReceivedPartial("%京%") } returns flowOf(fallbackResult)
 
         repository.search("京").test {
             val result = awaitItem()
@@ -173,17 +145,17 @@ class NotificationRepositoryImplTest {
             cancelAndIgnoreRemainingEvents()
         }
 
-        verify(exactly = 1) { dao.searchFts("京") }
-        verify(exactly = 1) { dao.searchPartial("%京%") }
+        verify(exactly = 1) { dao.searchReceivedFts("京") }
+        verify(exactly = 1) { dao.searchReceivedPartial("%京%") }
     }
 
     @Test
     fun `FTS検索が失敗しても部分一致検索にフォールバックする`() = runTest {
         val fallbackResult = listOf(
-            NotificationWithTag(createEntity(signature = "sr3", title = "100%完了"), null, null),
+            receivedNotification(createEntity(signature = "sr3", title = "100%完了"), rawLogId = 32L, receivedAt = 1000L, tag = null, appLabel = null),
         )
-        every { dao.searchFts("100%") } returns flow { error("bad MATCH query") }
-        every { dao.searchPartial("%100\\%%") } returns flowOf(fallbackResult)
+        every { dao.searchReceivedFts("100%") } returns flow { error("bad MATCH query") }
+        every { dao.searchReceivedPartial("%100\\%%") } returns flowOf(fallbackResult)
 
         repository.search("100%").test {
             val result = awaitItem()
@@ -192,8 +164,8 @@ class NotificationRepositoryImplTest {
             cancelAndIgnoreRemainingEvents()
         }
 
-        verify(exactly = 1) { dao.searchFts("100%") }
-        verify(exactly = 1) { dao.searchPartial("%100\\%%") }
+        verify(exactly = 1) { dao.searchReceivedFts("100%") }
+        verify(exactly = 1) { dao.searchReceivedPartial("%100\\%%") }
     }
 
     // ── 削除 ──────────────────────────────────────────
@@ -331,5 +303,19 @@ class NotificationRepositoryImplTest {
         receiveCount = receiveCount,
         firstReceivedAt = 1000L,
         lastReceivedAt = lastReceivedAt,
+    )
+
+    private fun receivedNotification(
+        notification: NotificationEntity,
+        rawLogId: Long,
+        receivedAt: Long,
+        tag: String?,
+        appLabel: String?,
+    ) = ReceivedNotificationWithTag(
+        notification = notification,
+        rawLogId = rawLogId,
+        receivedAt = receivedAt,
+        tag = tag,
+        appLabel = appLabel,
     )
 }

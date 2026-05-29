@@ -84,7 +84,7 @@ fun HomeScreen(
                 ) {
                     items(
                         items = state.notifications,
-                        key = { it.notification.id },
+                        key = { it.rawLogId },
                     ) { item ->
                         NotificationListItem(
                             item = item,
@@ -96,4 +96,3 @@ fun HomeScreen(
         }
     }
 }
-

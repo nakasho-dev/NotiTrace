@@ -11,7 +11,7 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.ukky.notitrace.data.db.entity.NotificationEntity
-import org.ukky.notitrace.data.db.entity.NotificationWithTag
+import org.ukky.notitrace.data.db.entity.ReceivedNotificationWithTag
 import org.ukky.notitrace.data.repository.NotificationRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -46,7 +46,7 @@ class SearchViewModelTest {
     @Test
     fun `検索クエリを入力すると結果が返る`() = runTest {
         val results = listOf(
-            NotificationWithTag(createEntity("東京の天気"), null, null),
+            receivedNotification(createEntity("東京の天気"), rawLogId = 1L, receivedAt = 1000L),
         )
         every { repo.search("東京") } returns flowOf(results)
 
@@ -73,5 +73,16 @@ class SearchViewModelTest {
         signature = "sig", receiveCount = 1,
         firstReceivedAt = 1000L, lastReceivedAt = 1000L,
     )
-}
 
+    private fun receivedNotification(
+        notification: NotificationEntity,
+        rawLogId: Long,
+        receivedAt: Long,
+    ) = ReceivedNotificationWithTag(
+        notification = notification,
+        rawLogId = rawLogId,
+        receivedAt = receivedAt,
+        tag = null,
+        appLabel = null,
+    )
+}

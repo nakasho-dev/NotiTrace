@@ -9,6 +9,7 @@ import org.ukky.notitrace.data.db.dao.NotificationDao
 import org.ukky.notitrace.data.db.dao.NotificationRawLogDao
 import org.ukky.notitrace.data.db.entity.NotificationEntity
 import org.ukky.notitrace.data.db.entity.NotificationRawLogEntity
+import org.ukky.notitrace.data.db.entity.ReceivedNotificationWithTag
 import org.ukky.notitrace.data.db.entity.NotificationWithTag
 import org.ukky.notitrace.data.db.entity.RawLogWithTag
 import javax.inject.Inject
@@ -21,21 +22,21 @@ class NotificationRepositoryImpl @Inject constructor(
     private val rawLogDao: NotificationRawLogDao,
 ) : NotificationRepository {
 
-    override fun getAllWithTag(): Flow<List<NotificationWithTag>> =
-        dao.getAllWithTag()
+    override fun getAllWithTag(): Flow<List<ReceivedNotificationWithTag>> =
+        dao.getAllReceivedWithTag()
 
-    override fun getByTag(tag: String): Flow<List<NotificationWithTag>> =
-        dao.getByTag(tag)
+    override fun getByTag(tag: String): Flow<List<ReceivedNotificationWithTag>> =
+        dao.getReceivedByTag(tag)
 
-    override fun search(query: String): Flow<List<NotificationWithTag>> {
+    override fun search(query: String): Flow<List<ReceivedNotificationWithTag>> {
         val pattern = query.toLikePattern()
-        return dao.searchFts(query)
+        return dao.searchReceivedFts(query)
             .catch { emit(emptyList()) }
             .flatMapLatest { ftsResults ->
                 if (ftsResults.isNotEmpty()) {
                     flowOf(ftsResults)
                 } else {
-                    dao.searchPartial(pattern)
+                    dao.searchReceivedPartial(pattern)
                 }
             }
     }
@@ -43,36 +44,15 @@ class NotificationRepositoryImpl @Inject constructor(
     override fun getById(id: Long): Flow<NotificationEntity?> =
         dao.getById(id)
 
-    /**
-     * 重複判定付き保存（upsert）。
-     *
-     * 1. signature で既存チェック
-     * 2. 既存あり → receiveCount++ & lastReceivedAt 更新 + rawLog INSERT
-     * 3. 既存なし → INSERT + rawLog INSERT
-     */
-    override suspend fun upsert(entity: NotificationEntity) {
-        val existing = dao.findBySignature(entity.signature)
-        if (existing != null) {
-            dao.incrementCount(entity.signature, entity.lastReceivedAt)
-            // 重複通知でも受信ごとに rawLog を記録する
-            rawLogDao.insert(
-                NotificationRawLogEntity(
-                    notificationId = existing.id,
-                    rawJson = entity.rawJson,
-                    receivedAt = entity.lastReceivedAt,
-                )
+    override suspend fun save(entity: NotificationEntity) {
+        val newId = dao.insert(entity)
+        rawLogDao.insert(
+            NotificationRawLogEntity(
+                notificationId = newId,
+                rawJson = entity.rawJson,
+                receivedAt = entity.lastReceivedAt,
             )
-        } else {
-            val newId = dao.insert(entity)
-            // 新規通知の rawLog を記録する
-            rawLogDao.insert(
-                NotificationRawLogEntity(
-                    notificationId = newId,
-                    rawJson = entity.rawJson,
-                    receivedAt = entity.firstReceivedAt,
-                )
-            )
-        }
+        )
     }
 
     override suspend fun deleteById(id: Long) = dao.deleteById(id)

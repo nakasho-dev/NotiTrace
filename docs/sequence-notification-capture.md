@@ -1,139 +1,38 @@
 # シーケンス図: 通知受信〜保存フロー
 
-> 対象機能: F-01 通知キャプチャ / F-02 重複通知の集約 / F-12 通知種別分類  
+> 対象機能: F-01 通知キャプチャ / F-02 通知シグネチャ生成 / F-12 通知種別分類  
 > 参照: [DESIGN.md §4.2 通知キャプチャの詳細フロー](./DESIGN.md#42-通知キャプチャの詳細フロー) / [DESIGN.md §4.4 通知種別分類ロジック](./DESIGN.md#44-通知種別分類ロジックf-12)
 
 ---
 
 ## 1. テキスト形式シーケンス図
 
-### 1.1 新規通知の場合
-
-```
+```text
 Android OS          ListenerService         Repository            暗号化DB              UI
     │                     │                     │                     │                  │
-    │  onNotificationPosted(sbn)                │                     │                  │
+    │ onNotificationPosted(sbn)                 │                     │                  │
     │────────────────────▶│                     │                     │                  │
-    │                     │                     │                     │                  │
-    │                     │ sbn から抽出:        │                     │                  │
-    │                     │  packageName        │                     │                  │
-    │                     │  title / text       │                     │                  │
-    │                     │  bigText / subText  │                     │                  │
-    │                     │  ticker / extras    │                     │                  │
-    │                     │                     │                     │                  │
-    │                     │ classifyNotification│                     │                  │
-    │                     │  flags/priority/    │                     │                  │
-    │                     │  extras → 7種別判定 │                     │                  │
-    │                     │                     │                     │                  │
-    │                     │ SHA-256 signature   │                     │                  │
-    │                     │ 生成                │                     │                  │
-    │                     │                     │                     │                  │
-    │                     │ buildRawJson()      │                     │                  │
-    │                     │ sbn の全フィールドを │                     │                  │
-    │                     │ 直接読み取り         │                     │                  │
-    │                     │ prettyPrint JSON化   │                     │                  │
-    │                     │ → raw_json に格納   │                     │                  │
-    │                     │ ※ アプリ加工データ   │                     │                  │
-    │                     │   (type/sig等)は     │                     │                  │
-    │                     │   含めない           │                     │                  │
-    │                     │                     │                     │                  │
-    │                     │  upsert(entity)     │                     │                  │
+    │                     │ 抽出: packageName / title / text /        │                  │
+    │                     │       bigText / subText / ticker / extras │                  │
+    │                     │ classifyNotification()                    │                  │
+    │                     │ SignatureGenerator.generate()             │                  │
+    │                     │ buildRawJson()                            │                  │
+    │                     │ save(entity)                              │                  │
     │                     │────────────────────▶│                     │                  │
-    │                     │                     │                     │                  │
-    │                     │                     │  SELECT ... WHERE   │                  │
-    │                     │                     │  signature = :sig   │                  │
-    │                     │                     │  LIMIT 1            │                  │
+    │                     │                     │ INSERT notifications │                  │
     │                     │                     │────────────────────▶│                  │
-    │                     │                     │                     │                  │
-    │                     │                     │  結果: null（未存在）│                  │
-    │                     │                     │◀────────────────────│                  │
-    │                     │                     │                     │                  │
-    │                     │                     │  INSERT INTO        │                  │
-    │                     │                     │  notifications      │                  │
-    │                     │                     │  (receiveCount=1,   │                  │
-    │                     │                     │   firstReceivedAt   │                  │
-    │                     │                     │   =now)             │                  │
+    │                     │                     │ INSERT raw_logs      │                  │
     │                     │                     │────────────────────▶│                  │
-    │                     │                     │                     │                  │
-    │                     │                     │  INSERT INTO        │                  │
-    │                     │                     │  notifications_fts  │                  │
-    │                     │                     │  (FTS インデックス)  │                  │
-    │                     │                     │────────────────────▶│                  │
-    │                     │                     │                     │                  │
-    │                     │                     │  INSERT INTO        │                  │
-    │                     │                     │  notification_raw_  │                  │
-    │                     │                     │  logs (rawJson)     │                  │
-    │                     │                     │────────────────────▶│                  │
-    │                     │                     │                     │                  │
     │                     │                     │         OK          │                  │
-    │                     │                     │◀────────────────────│                  │
-    │                     │                     │                     │                  │
-    │                     │       完了          │                     │                  │
     │                     │◀────────────────────│                     │                  │
-    │                     │                     │                     │                  │
-    │                     │                     │                     │  Flow<List>      │
-    │                     │                     │                     │  自動 emit       │
+    │                     │                     │                     │ Flow<List> emit  │
     │                     │                     │                     │─────────────────▶│
-    │                     │                     │                     │                  │
-    │                     │                     │                     │        リスト再描画│
-    │                     │                     │                     │                  │
-```
-
-### 1.2 重複通知の場合
-
-```
-Android OS          ListenerService         Repository            暗号化DB              UI
-    │                     │                     │                     │                  │
-    │  onNotificationPosted(sbn)                │                     │                  │
-    │────────────────────▶│                     │                     │                  │
-    │                     │                     │                     │                  │
-    │                     │ sbn から抽出         │                     │                  │
-    │                     │ + classifyNotification                     │                  │
-    │                     │ + SHA-256 signature │                     │                  │
-    │                     │                     │                     │                  │
-    │                     │  upsert(entity)     │                     │                  │
-    │                     │────────────────────▶│                     │                  │
-    │                     │                     │                     │                  │
-    │                     │                     │  SELECT ... WHERE   │                  │
-    │                     │                     │  signature = :sig   │                  │
-    │                     │                     │  LIMIT 1            │                  │
-    │                     │                     │────────────────────▶│                  │
-    │                     │                     │                     │                  │
-    │                     │                     │  結果: 既存レコード  │                  │
-    │                     │                     │◀────────────────────│                  │
-    │                     │                     │                     │                  │
-    │                     │                     │  UPDATE             │                  │
-    │                     │                     │  notifications SET  │                  │
-    │                     │                     │  receive_count + 1, │                  │
-    │                     │                     │  last_received_at   │                  │
-    │                     │                     │  = now              │                  │
-    │                     │                     │────────────────────▶│                  │
-    │                     │                     │                     │                  │
-    │                     │                     │  INSERT INTO        │                  │
-    │                     │                     │  notification_raw_  │                  │
-    │                     │                     │  logs (rawJson)     │                  │
-    │                     │                     │────────────────────▶│                  │
-    │                     │                     │                     │                  │
-    │                     │                     │         OK          │                  │
-    │                     │                     │◀────────────────────│                  │
-    │                     │                     │                     │                  │
-    │                     │       完了          │                     │                  │
-    │                     │◀────────────────────│                     │                  │
-    │                     │                     │                     │                  │
-    │                     │                     │                     │  Flow<List>      │
-    │                     │                     │                     │  自動 emit       │
-    │                     │                     │                     │─────────────────▶│
-    │                     │                     │                     │                  │
-    │                     │                     │                     │  受信回数・時刻   │
-    │                     │                     │                     │  更新反映        │
-    │                     │                     │                     │                  │
+    │                     │                     │                     │ 受信順で再描画    │
 ```
 
 ---
 
 ## 2. Mermaid 形式シーケンス図
-
-### 2.1 統合フロー（新規 / 重複の分岐を含む）
 
 ```mermaid
 sequenceDiagram
@@ -145,83 +44,20 @@ sequenceDiagram
     participant UI as Jetpack Compose UI
 
     OS->>SVC: onNotificationPosted(sbn)
+    Note over SVC: StatusBarNotification から抽出<br/>packageName / title / text / bigText / subText / ticker / extras
+    Note over SVC: classifyNotification() で 7 種別を判定
+    Note over SVC: SignatureGenerator.generate()<br/>SHA-256(packageName + title + text + bigText + subText)
+    Note over SVC: buildRawJson()<br/>OS 由来のフィールドのみ prettyPrint JSON 化
 
-    Note over SVC: StatusBarNotification から抽出<br/>packageName / title / text<br/>bigText / subText / ticker / extras
-
-    Note over SVC: classifyNotification()<br/>flags / priority / extras から<br/>7 種別を判定
-
-    Note over SVC: SignatureGenerator.generate()<br/>SHA-256(packageName + title<br/>+ text + bigText + subText)
-
-    Note over SVC: buildRawJson()<br/>StatusBarNotification の全フィールドを<br/>直接読み取り prettyPrint JSON に変換<br/>※ アプリ独自の加工データ<br/>(notificationType/signature/capturedAt)<br/>は含めない
-
-    SVC->>REPO: upsert(notificationEntity)
-
-    REPO->>DB: SELECT * FROM notifications<br/>WHERE signature = :sig LIMIT 1
-
-    alt signature が未存在（新規通知）
-        DB-->>REPO: null
-
-        REPO->>DB: INSERT INTO notifications<br/>(receiveCount=1,<br/>firstReceivedAt=now,<br/>lastReceivedAt=now)
-
-        REPO->>DB: INSERT INTO notifications_fts<br/>(title, text, bigText, subText)
-
-        REPO->>DB: INSERT INTO notification_raw_logs<br/>(notification_id, rawJson, receivedAt)
-
-        DB-->>REPO: OK
-
-    else signature が既存（重複通知）
-        DB-->>REPO: 既存レコード
-
-        REPO->>DB: UPDATE notifications SET<br/>receive_count = receive_count + 1,<br/>last_received_at = :now<br/>WHERE signature = :sig
-
-        REPO->>DB: INSERT INTO notification_raw_logs<br/>(notification_id, rawJson, receivedAt)
-
-        DB-->>REPO: OK
-    end
-
+    SVC->>REPO: save(notificationEntity)
+    REPO->>DB: INSERT INTO notifications
+    REPO->>DB: INSERT INTO notification_raw_logs
+    DB-->>REPO: OK
     REPO-->>SVC: 完了
 
-    Note over DB,UI: Room Flow による自動通知
-
-    DB-)UI: Flow&lt;List&lt;NotificationEntity&gt;&gt; emit
-
-    Note over UI: LazyColumn リスト再描画<br/>（新規行追加 or 受信回数・時刻更新）
-```
-
-### 2.2 DB 暗号化レイヤーの詳細（補足）
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant REPO as Repository
-    participant DP as DatabaseProvider
-    participant KS as Android Keystore
-    participant SP as EncryptedSharedPrefs
-    participant SC as SQLCipher
-
-    Note over REPO: DB アクセス初回時
-
-    REPO->>DP: getDatabase()
-
-    DP->>SP: 暗号化パスフレーズ取得
-
-    alt 初回起動（パスフレーズ未生成）
-        SP-->>DP: null
-        DP->>DP: SecureRandom で<br/>ランダムパスフレーズ生成
-        DP->>KS: AES-256-GCM 鍵を生成<br/>(alias: "notitrace_db_key")
-        KS-->>DP: SecretKey
-        DP->>KS: パスフレーズを暗号化
-        KS-->>DP: 暗号文 (iv + ciphertext + tag)
-        DP->>SP: 暗号化パスフレーズを保存
-    else 2回目以降
-        SP-->>DP: 暗号化パスフレーズ
-        DP->>KS: Keystore 鍵でパスフレーズを復号
-        KS-->>DP: 平文パスフレーズ
-    end
-
-    DP->>SC: SupportFactory(passphrase)
-    SC-->>DP: 暗号化 DB インスタンス
-    DP-->>REPO: NotiTraceDatabase
+    Note over DB,UI: Room Flow により自動反映
+    DB-)UI: Flow<List<ReceivedNotificationWithTag>> emit
+    Note over UI: LazyColumn を受信順で再描画
 ```
 
 ---
@@ -230,16 +66,12 @@ sequenceDiagram
 
 | # | 発信元 | 受信先 | 処理内容 | 備考 |
 |---|---|---|---|---|
-| 1 | Android OS | ListenerService | `onNotificationPosted(sbn)` コールバック | システムがバインドしたサービスに通知を配信 |
-| 2 | ListenerService | (内部処理) | `StatusBarNotification` からフィールド抽出 | `notification.extras` から title / text / bigText / subText / ticker を取得 |
-| 2a | ListenerService | (内部処理) | `NotificationExtractor.classifyNotification()` | flags → FLAG_FOREGROUND_SERVICE / ONGOING_EVENT / GROUP_SUMMARY の順に判定。次に FCM マーカーキーの有無 + priority で 7 種別に分類 |
-| 3 | ListenerService | (内部処理) | `SignatureGenerator.generate()` | `packageName + title + text + bigText + subText` の SHA-256 ハッシュ |
-| 3a | ListenerService | (内部処理) | `NotificationExtractor.buildRawJson()` | `StatusBarNotification` の全フィールドを直接読み取り prettyPrint JSON 文字列に変換。アプリ独自の加工データ（notificationType / signature / capturedAt）は含めず、OS 由来のデータのみを `raw_json` カラムに格納 |
-| 4 | ListenerService | Repository | `upsert(entity)` | Dispatchers.IO コルーチンで実行 |
-| 5 | Repository | 暗号化DB | `SELECT ... WHERE signature = :sig` | UNIQUE INDEX による高速検索 |
-| 6a | Repository | 暗号化DB | `INSERT INTO notifications` | 新規通知: receiveCount=1 |
-| 6b | Repository | 暗号化DB | `UPDATE notifications SET receive_count + 1` | 重複通知: カウントと時刻を更新 |
-| 6c | Repository | 暗号化DB | `INSERT INTO notification_raw_logs` | 新規・重複いずれの場合も受信ごとに rawJson + receivedAt を記録 |
-| 7 | 暗号化DB | UI | `Flow<List<NotificationEntity>>` emit | Room の invalidation tracker が変更を検知し自動発火 |
-| 8 | UI | (内部処理) | Compose 再コンポジション | `collectAsStateWithLifecycle()` で Flow を State に変換 |
-
+| 1 | Android OS | ListenerService | `onNotificationPosted(sbn)` | システムが通知を配信 |
+| 2 | ListenerService | 内部処理 | `StatusBarNotification` から各フィールドを抽出 | `extras` を含む |
+| 3 | ListenerService | 内部処理 | `NotificationExtractor.classifyNotification()` | 7 種別を判定 |
+| 4 | ListenerService | 内部処理 | `SignatureGenerator.generate()` | 通知相関用 SHA-256 を生成 |
+| 5 | ListenerService | 内部処理 | `NotificationExtractor.buildRawJson()` | OS 由来の生データを整形 JSON 化 |
+| 6 | ListenerService | Repository | `save(entity)` | Dispatchers.IO コルーチンで実行 |
+| 7 | Repository | 暗号化DB | `INSERT INTO notifications` | 重複内容でも毎回新規行を保存 |
+| 8 | Repository | 暗号化DB | `INSERT INTO notification_raw_logs` | 受信ごとの rawJson を記録 |
+| 9 | 暗号化DB | UI | `Flow<List<ReceivedNotificationWithTag>>` emit | 一覧は受信順で再描画 |

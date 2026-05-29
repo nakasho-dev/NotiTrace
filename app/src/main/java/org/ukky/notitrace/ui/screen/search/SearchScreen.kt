@@ -63,7 +63,7 @@ fun SearchScreen(
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(state.results, key = { it.notification.id }) { item ->
+                items(state.results, key = { it.rawLogId }) { item ->
                     NotificationListItem(
                         item = item,
                         onClick = { onNotificationClick(item.notification.id) },
@@ -73,4 +73,3 @@ fun SearchScreen(
         }
     }
 }
-

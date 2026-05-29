@@ -8,13 +8,13 @@ import androidx.room.PrimaryKey
 /**
  * 通知ログのメインテーブル。
  *
- * - signature (SHA-256) で重複判定を行う
- * - 同一 signature の通知は receiveCount / lastReceivedAt のみ更新する
+ * - 1 回の通知受信につき 1 行を保存する
+ * - signature (SHA-256) は重複検出ではなく検索・相関用メタデータとして保持する
  */
 @Entity(
     tableName = "notifications",
     indices = [
-        Index(value = ["signature"], unique = true),
+        Index(value = ["signature"]),
         Index(value = ["package_name"]),
         Index(value = ["last_received_at"]),
     ]
@@ -83,4 +83,3 @@ data class NotificationEntity(
     @ColumnInfo(name = "last_received_at")
     val lastReceivedAt: Long,
 )
-

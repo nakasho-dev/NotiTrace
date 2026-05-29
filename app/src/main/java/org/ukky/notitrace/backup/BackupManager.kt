@@ -58,7 +58,7 @@ class BackupManager @Inject constructor(
 
     /**
      * 暗号化バックアップからデータを復元する。
-     * signature ベースで重複を排除してマージする。
+     * バックアップ内の通知を受信単位のレコードとして復元する。
      */
     suspend fun import(encryptedData: ByteArray, password: String) {
         val jsonBytes = BackupCrypto.decrypt(encryptedData, password)
@@ -66,7 +66,7 @@ class BackupManager @Inject constructor(
 
         backup.notifications.forEach { item ->
             val entity = item.toEntity()
-            notificationRepo.upsert(entity)
+            notificationRepo.save(entity)
         }
 
         backup.tags.forEach { item ->

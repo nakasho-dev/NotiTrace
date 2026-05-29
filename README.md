@@ -19,7 +19,7 @@
 | 🏷️ **タグ管理** | 通知実績のある全アプリを一覧表示し、アプリ単位でタグを追加・編集・削除。過去ログ全体に即時反映 |
 | 📊 **通知種別分類** | リモート/ローカル/サイレント/常駐など 7 種別を自動判定・表示 |
 | 💾 **バックアップ** | 暗号化 JSON で SAF 経由エクスポート/インポート |
-| 📤 **JSONL エクスポート** | 全件またはタグ絞り込みで通知ログを JSON Lines 形式でエクスポート。集約済みエクスポートと受信ごとの生データエクスポートの 2 モードに対応 |
+| 📤 **JSONL エクスポート** | 全件またはタグ絞り込みで通知ログを JSON Lines 形式でエクスポート。通知データエクスポートと受信ごとの生データエクスポートの 2 モードに対応 |
 | 📄 **JSON 生データ表示** | 通知受信時の Android OS 由来の生データ（`StatusBarNotification` の全フィールド）を整形 JSON でシンタックスハイライト表示＋ワンタップコピー。デバッグ用途に最適 |
 | 🗂️ **受信ごとの生データ保存** | 重複集約された通知でも、受信ごとの生 JSON を `notification_raw_logs` テーブルに個別保存。保持期間を日単位で設定可能 |
 
@@ -152,9 +152,9 @@ app/src/main/java/org/ukky/notitrace/
 ├── di/
 │   └── AppModule.kt              # Hilt Module
 ├── export/
-│   └── JsonlExporter.kt          # JSONL エクスポート（集約済み + 生データ受信順）
+│   └── JsonlExporter.kt          # JSONL エクスポート（通知データ + 生データ受信順）
 └── util/
-    ├── SignatureGenerator.kt      # SHA-256 重複判定
+    ├── SignatureGenerator.kt      # SHA-256 通知シグネチャ生成
     └── NotificationExtractor.kt   # 通知→Entity 変換 + 種別分類
 ```
 

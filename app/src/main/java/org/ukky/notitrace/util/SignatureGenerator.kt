@@ -3,7 +3,7 @@ package org.ukky.notitrace.util
 import java.security.MessageDigest
 
 /**
- * 通知の重複判定用 SHA-256 ハッシュ生成器。
+ * 通知相関用 SHA-256 ハッシュ生成器。
  *
  * packageName + title + text + bigText + subText を連結してハッシュ化する。
  * null フィールドには区別用のマーカーを使い、null と空文字列を区別する。
@@ -33,4 +33,3 @@ object SignatureGenerator {
         return hashBytes.joinToString("") { "%02x".format(it) }
     }
 }
-

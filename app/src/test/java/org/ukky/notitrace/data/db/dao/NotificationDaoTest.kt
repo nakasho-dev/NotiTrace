@@ -14,6 +14,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.ukky.notitrace.data.db.NotiTraceDatabase
 import org.ukky.notitrace.data.db.entity.NotificationEntity
+import org.ukky.notitrace.data.db.entity.NotificationRawLogEntity
 
 /**
  * NotificationDao の単体テスト（Robolectric + in-memory DB）
@@ -26,6 +27,7 @@ class NotificationDaoTest {
 
     private lateinit var db: NotiTraceDatabase
     private lateinit var dao: NotificationDao
+    private lateinit var rawLogDao: NotificationRawLogDao
 
     @Before
     fun setUp() {
@@ -34,6 +36,7 @@ class NotificationDaoTest {
             .allowMainThreadQueries()
             .build()
         dao = db.notificationDao()
+        rawLogDao = db.notificationRawLogDao()
     }
 
     @After
@@ -59,45 +62,33 @@ class NotificationDaoTest {
     }
 
     @Test
-    fun `signatureで検索できる`() = runTest {
-        val entity = createEntity(signature = "find_me")
-        dao.insert(entity)
+    fun `同一signatureでも複数挿入できる`() = runTest {
+        dao.insert(createEntity(signature = "dup_sig", title = "重複通知A"))
+        dao.insert(createEntity(signature = "dup_sig", title = "重複通知B", lastReceivedAt = 2000L))
 
-        val found = dao.findBySignature("find_me")
-        assertNotNull(found)
-
-        val notFound = dao.findBySignature("not_exist")
-        assertNull(notFound)
-    }
-
-    // ── 重複通知 (UPSERT) ────────────────────────────────
-
-    @Test
-    fun `同一signatureの受信回数をインクリメントできる`() = runTest {
-        val entity = createEntity(signature = "dup_sig", title = "重複通知")
-        dao.insert(entity)
-
-        dao.incrementCount("dup_sig", timestamp = 2000L)
-
-        val updated = dao.findBySignature("dup_sig")!!
-        assertEquals(2, updated.receiveCount)
-        assertEquals(2000L, updated.lastReceivedAt)
-        assertEquals(1000L, updated.firstReceivedAt) // 初回時刻は変わらない
+        val all = dao.getAllForBackup()
+        assertEquals(2, all.size)
+        assertEquals(2, all.count { it.signature == "dup_sig" })
     }
 
     // ── 一覧取得 (Flow) ──────────────────────────────────
 
     @Test
-    fun `全通知をlastReceivedAt降順で取得できる`() = runTest {
-        dao.insert(createEntity(signature = "s1", title = "古い", lastReceivedAt = 1000L))
-        dao.insert(createEntity(signature = "s2", title = "新しい", lastReceivedAt = 3000L))
-        dao.insert(createEntity(signature = "s3", title = "中間", lastReceivedAt = 2000L))
+    fun `全通知を受信時刻降順で取得できる`() = runTest {
+        val oldId = dao.insert(createEntity(signature = "s1", title = "古い", lastReceivedAt = 1000L))
+        val newestId = dao.insert(createEntity(signature = "s2", title = "新しい", lastReceivedAt = 3000L))
+        val legacyId = dao.insert(createEntity(signature = "s3", title = "旧データ", lastReceivedAt = 2000L))
 
-        dao.getAllWithTag().test {
+        rawLogDao.insert(NotificationRawLogEntity(notificationId = oldId, rawJson = """{"n":1}""", receivedAt = 1000L))
+        rawLogDao.insert(NotificationRawLogEntity(notificationId = newestId, rawJson = """{"n":2}""", receivedAt = 3000L))
+
+        dao.getAllReceivedWithTag().test {
             val list = awaitItem()
             assertEquals(3, list.size)
             assertEquals("新しい", list[0].notification.title)
-            assertEquals("中間", list[1].notification.title)
+            assertEquals(3000L, list[0].receivedAt)
+            assertEquals("旧データ", list[1].notification.title)
+            assertEquals(-legacyId, list[1].rawLogId)
             assertEquals("古い", list[2].notification.title)
             cancelAndIgnoreRemainingEvents()
         }
@@ -139,7 +130,7 @@ class NotificationDaoTest {
 
         // Robolectric では FTS content sync triggers が動かない場合があるため
         // 結果件数ではなく「例外なく実行できること」を検証する
-        dao.searchFts("hello").test {
+        dao.searchReceivedFts("hello").test {
             val results = awaitItem()
             // FTS が動けば 1 件、動かなければ 0 件（どちらも正常）
             assertTrue(results.size <= 1)
@@ -152,7 +143,7 @@ class NotificationDaoTest {
         dao.insert(createEntity(signature = "like1", title = "東京都", text = "天気予報"))
         dao.insert(createEntity(signature = "like2", title = "大阪府", text = "お知らせ"))
 
-        dao.searchPartial("%京%").test {
+        dao.searchReceivedPartial("%京%").test {
             val results = awaitItem()
             assertEquals(1, results.size)
             assertEquals("東京都", results.first().notification.title)
@@ -165,7 +156,7 @@ class NotificationDaoTest {
         dao.insert(createEntity(signature = "like3", title = "100%完了", text = "進捗100%"))
         dao.insert(createEntity(signature = "like4", title = "1000件", text = "進捗あり"))
 
-        dao.searchPartial("%100\\%%").test {
+        dao.searchReceivedPartial("%100\\%%").test {
             val results = awaitItem()
             assertEquals(1, results.size)
             assertEquals("100%完了", results.first().notification.title)
@@ -202,4 +193,3 @@ class NotificationDaoTest {
         lastReceivedAt = lastReceivedAt,
     )
 }
-

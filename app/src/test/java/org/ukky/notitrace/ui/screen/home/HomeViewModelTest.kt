@@ -11,7 +11,7 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.ukky.notitrace.data.db.entity.NotificationEntity
-import org.ukky.notitrace.data.db.entity.NotificationWithTag
+import org.ukky.notitrace.data.db.entity.ReceivedNotificationWithTag
 import org.ukky.notitrace.data.repository.AppTagRepository
 import org.ukky.notitrace.data.repository.NotificationRepository
 
@@ -42,8 +42,8 @@ class HomeViewModelTest {
     @Test
     fun `初期状態ではフィルタなしで全通知を取得する`() = runTest {
         val items = listOf(
-            NotificationWithTag(createEntity("s1", "通知A"), "SNS", "App"),
-            NotificationWithTag(createEntity("s2", "通知B"), null, null),
+            receivedNotification(createEntity("s1", "通知A"), rawLogId = 1L, receivedAt = 2000L, tag = "SNS", appLabel = "App"),
+            receivedNotification(createEntity("s2", "通知B"), rawLogId = 2L, receivedAt = 1000L, tag = null, appLabel = null),
         )
         every { notificationRepo.getAllWithTag() } returns flowOf(items)
         every { tagRepo.getAllTags() } returns flowOf(listOf("SNS"))
@@ -71,7 +71,7 @@ class HomeViewModelTest {
         every { tagRepo.getAllTags() } returns flowOf(listOf("仕事", "SNS"))
 
         val filtered = listOf(
-            NotificationWithTag(createEntity("f1", "Slack通知"), "仕事", "Slack"),
+            receivedNotification(createEntity("f1", "Slack通知"), rawLogId = 3L, receivedAt = 3000L, tag = "仕事", appLabel = "Slack"),
         )
         every { notificationRepo.getByTag("仕事") } returns flowOf(filtered)
 
@@ -95,7 +95,7 @@ class HomeViewModelTest {
     @Test
     fun `タグフィルタを解除すると全件に戻る`() = runTest {
         val all = listOf(
-            NotificationWithTag(createEntity("a1", "全件A"), null, null),
+            receivedNotification(createEntity("a1", "全件A"), rawLogId = 4L, receivedAt = 1000L, tag = null, appLabel = null),
         )
         every { notificationRepo.getAllWithTag() } returns flowOf(all)
         every { tagRepo.getAllTags() } returns flowOf(emptyList())
@@ -118,5 +118,18 @@ class HomeViewModelTest {
         signature = signature, receiveCount = 1,
         firstReceivedAt = 1000L, lastReceivedAt = 1000L,
     )
-}
 
+    private fun receivedNotification(
+        notification: NotificationEntity,
+        rawLogId: Long,
+        receivedAt: Long,
+        tag: String?,
+        appLabel: String?,
+    ) = ReceivedNotificationWithTag(
+        notification = notification,
+        rawLogId = rawLogId,
+        receivedAt = receivedAt,
+        tag = tag,
+        appLabel = appLabel,
+    )
+}

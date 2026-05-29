@@ -161,7 +161,7 @@ fun SettingsScreen(
                         enabled = !state.isJsonlExporting,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(if (state.isJsonlExporting) "エクスポート中…" else "JSONLエクスポート（集約済み）")
+                        Text(if (state.isJsonlExporting) "エクスポート中…" else "JSONLエクスポート（通知データ）")
                     }
 
                     Spacer(Modifier.height(8.dp))
@@ -388,4 +388,3 @@ private fun RetentionDaysSelector(
         }
     }
 }
-

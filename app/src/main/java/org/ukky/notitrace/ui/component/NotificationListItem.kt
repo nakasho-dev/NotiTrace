@@ -20,13 +20,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.ukky.notitrace.data.db.entity.NotificationType
-import org.ukky.notitrace.data.db.entity.NotificationWithTag
+import org.ukky.notitrace.data.db.entity.ReceivedNotificationWithTag
 import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
 fun NotificationListItem(
-    item: NotificationWithTag,
+    item: ReceivedNotificationWithTag,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -42,7 +42,7 @@ fun NotificationListItem(
         ),
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            // ── ヘッダ行: アプリ名 + タグ + 受信回数 ────
+            // ── ヘッダ行: アプリ名 + タグ ────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -59,15 +59,6 @@ fun NotificationListItem(
 
                 if (item.tag != null) {
                     TagChip(tag = item.tag, modifier = Modifier.padding(start = 4.dp))
-                }
-
-                if (n.receiveCount > 1) {
-                    Badge(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        modifier = Modifier.padding(start = 4.dp),
-                    ) {
-                        Text("×${n.receiveCount}")
-                    }
                 }
             }
 
@@ -105,7 +96,7 @@ fun NotificationListItem(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = dateFormat.format(Date(n.lastReceivedAt)),
+                    text = dateFormat.format(Date(item.receivedAt)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline,
                 )
@@ -203,4 +194,3 @@ private fun rememberTypeChipStyle(type: NotificationType): TypeChipStyle {
         )
     }
 }
-

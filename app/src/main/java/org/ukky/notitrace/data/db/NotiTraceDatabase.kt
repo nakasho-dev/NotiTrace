@@ -19,7 +19,7 @@ import org.ukky.notitrace.data.db.entity.NotificationRawLogEntity
         AppTagEntity::class,
         NotificationRawLogEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class NotiTraceDatabase : RoomDatabase() {
@@ -109,6 +109,15 @@ abstract class NotiTraceDatabase : RoomDatabase() {
                 )
             }
         }
+
+        /** v5 → v6: signature の UNIQUE 制約を解除し、通常インデックスへ変更 */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP INDEX IF EXISTS index_notifications_signature")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_notifications_signature ON notifications(signature)"
+                )
+            }
+        }
     }
 }
-
