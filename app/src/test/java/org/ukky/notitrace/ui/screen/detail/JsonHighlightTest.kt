@@ -166,5 +166,26 @@ class JsonHighlightTest {
         val result = highlightJson(json, colors)
         assertEquals(json, result.text)
     }
-}
 
+    @Test
+    fun `buildJsonShareFileName includes notification identity`() {
+        val fileName = buildJsonShareFileName(
+            packageName = "com.example.app",
+            notificationId = 42L,
+            lastReceivedAt = 1717088400000L,
+        )
+
+        assertEquals("notitrace_com.example.app_42_1717088400000.json", fileName)
+    }
+
+    @Test
+    fun `buildJsonShareFileName sanitizes invalid characters and falls back`() {
+        val fileName = buildJsonShareFileName(
+            packageName = "com.example/app:beta",
+            notificationId = null,
+            lastReceivedAt = null,
+        )
+
+        assertEquals("notitrace_com.example_app_beta_unknown_latest.json", fileName)
+    }
+}

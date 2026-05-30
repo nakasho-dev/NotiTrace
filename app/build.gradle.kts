@@ -64,7 +64,7 @@ android {
         applicationId = "org.ukky.notitrace"
         minSdk = 29
         targetSdk = 36
-        versionCode = 4
+        versionCode = 5
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -74,6 +74,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "(debug)"
+            resValue("string", "app_name", "(debug)NotiTrace")
         }
 
         release {
@@ -89,6 +90,7 @@ android {
     }
     buildFeatures {
         compose = true
+        resValues = true
     }
     testOptions {
         unitTests {

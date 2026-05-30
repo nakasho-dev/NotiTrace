@@ -30,7 +30,7 @@ This repository is a single-module Android app (`:app`) built with Gradle Kotlin
 - `MainActivity` is the single activity. It chooses `onboarding` vs `home` as the start destination based on whether `NotificationListenerService` permission is enabled.
 - The core capture flow is: `NotiTraceListenerService.onNotificationPosted()` -> `NotificationExtractor.extract()` -> `NotificationRepository.save()` -> `NotificationDao.insert()` plus `NotificationRawLogDao.insert()`.
 - The app uses Compose + ViewModel + Repository + Room. ViewModels expose `StateFlow<UiState>`, and screens collect with `collectAsStateWithLifecycle()`.
-- Dependency injection is Koin-based. Room, DAOs, repositories, and ViewModels are wired in `app/src/main/java/org/ukky/notitrace/di/AppModule.kt`.
+- Dependency injection is Hilt-based. Room, DAOs, repositories, and ViewModels are wired in `app/src/main/java/org/ukky/notitrace/di/AppModule.kt`, `NotiTraceApplication.kt`, and `MainActivity.kt`.
 - The Room database is encrypted with SQLCipher. `DatabaseProvider` creates or restores the passphrase via Android Keystore, then opens `notitrace.db`.
 - Search is intentionally two-stage: FTS first, then escaped `LIKE` fallback when FTS returns no rows or fails. Preserve that behavior for short Japanese queries and wildcard-heavy inputs.
 - Settings owns the import/export flows. `BackupManager` handles encrypted backup import/export, while `JsonlExporter` writes plain UTF-8 JSONL for both notification data and per-receipt raw logs.
@@ -46,6 +46,7 @@ This repository is a single-module Android app (`:app`) built with Gradle Kotlin
 - **ViewModel state follows a consistent Flow pattern.** Most screens combine repository flows and local `MutableStateFlow`s, then expose a `stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ...)` state object.
 - **Keep the AboutLibraries build workaround in mind.** `app/build.gradle.kts` has a custom `GenerateAboutLibrariesResTask` because the plugin does not detect AGP 9.x resources correctly; do not remove it as dead code.
 - **Privacy-first constraints are hard requirements.** The app is intentionally offline-only and built around `NotificationListenerService`; avoid adding network paths, cloud sync, or alternate capture mechanisms that break that model.
+- **Keep design docs in sync with implementation.** When you implement or change a feature, update `docs/BASIC_DESIGN.md` (not `DESIGN.md`) and any affected `docs/sequence-*.md` diagrams in the same change.
 
 ## Android MCP server guidance
 

@@ -12,6 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import org.ukky.notitrace.ui.screen.detail.DetailScreen
 import org.ukky.notitrace.ui.screen.detail.JsonViewerScreen
+import org.ukky.notitrace.ui.screen.detail.buildJsonShareFileName
 import org.ukky.notitrace.ui.screen.home.HomeScreen
 import org.ukky.notitrace.ui.screen.onboarding.OnboardingScreen
 import org.ukky.notitrace.ui.screen.search.SearchScreen
@@ -76,6 +77,11 @@ fun NotiTraceNavGraph(
             val state by viewModel.uiState.collectAsStateWithLifecycle()
             JsonViewerScreen(
                 rawJson = state.rawJson,
+                shareFileName = buildJsonShareFileName(
+                    packageName = state.notification?.packageName,
+                    notificationId = state.notification?.id,
+                    lastReceivedAt = state.notification?.lastReceivedAt,
+                ),
                 onBack = { navController.popBackStack() },
             )
         }
@@ -116,4 +122,3 @@ fun NotiTraceNavGraph(
         }
     }
 }
-
