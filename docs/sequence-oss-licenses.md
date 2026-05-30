@@ -1,7 +1,7 @@
 # シーケンス図: OSSライセンス表示フロー
 
 > 対象機能: F-14 OSSライセンス表示  
-> 参照: [DESIGN.md §3.3.8 OSSライセンス画面](./DESIGN.md#338-ossライセンス画面)
+> 参照: [BASIC_DESIGN.md §3.3.8 OSSライセンス画面](./BASIC_DESIGN.md#338-ossライセンス画面)
 
 ---
 

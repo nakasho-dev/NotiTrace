@@ -171,7 +171,7 @@ app/src/main/java/org/ukky/notitrace/
 
 ## 📄 ドキュメント
 
-- [基本設計書](docs/DESIGN.md)
+- [基本設計書](docs/BASIC_DESIGN.md)
 - [シーケンス図: 通知受信〜保存フロー](docs/sequence-notification-capture.md)
 - [シーケンス図: タグ管理フロー](docs/sequence-tag-management.md)
 - [シーケンス図: OSSライセンス表示フロー](docs/sequence-oss-licenses.md)
