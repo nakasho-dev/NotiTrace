@@ -10,8 +10,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.paging.LoadState
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import org.ukky.notitrace.ui.component.EmptyState
 import org.ukky.notitrace.ui.component.NotificationListItem
 
@@ -24,6 +28,7 @@ fun SearchScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val results = viewModel.results.collectAsLazyPagingItems()
 
     Scaffold(
         modifier = modifier,
@@ -55,7 +60,18 @@ fun SearchScreen(
     ) { innerPadding ->
         if (state.query.isBlank()) {
             EmptyState("キーワードを入力してください", Modifier.padding(innerPadding))
-        } else if (state.results.isEmpty()) {
+        } else if (results.loadState.refresh is LoadState.Loading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+        } else if (results.loadState.refresh is LoadState.Error) {
+            EmptyState("検索結果の読み込みに失敗しました", Modifier.padding(innerPadding))
+        } else if (results.itemCount == 0) {
             EmptyState("「${state.query}」に一致する通知はありません", Modifier.padding(innerPadding))
         } else {
             LazyColumn(
@@ -63,11 +79,29 @@ fun SearchScreen(
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(state.results, key = { it.rawLogId }) { item ->
-                    NotificationListItem(
-                        item = item,
-                        onClick = { onNotificationClick(item.notification.id) },
-                    )
+                items(
+                    count = results.itemCount,
+                    key = results.itemKey { it.id },
+                ) { index ->
+                    results[index]?.let { item ->
+                        NotificationListItem(
+                            item = item,
+                            onClick = { onNotificationClick(item.id) },
+                        )
+                    }
+                }
+
+                if (results.loadState.append is LoadState.Loading) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    }
                 }
             }
         }

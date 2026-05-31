@@ -13,8 +13,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.paging.LoadState
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import org.ukky.notitrace.ui.component.EmptyState
 import org.ukky.notitrace.ui.component.NotificationListItem
 import org.ukky.notitrace.ui.component.TagChip
@@ -30,6 +34,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val notifications = viewModel.notifications.collectAsLazyPagingItems()
 
     Scaffold(
         modifier = modifier,
@@ -75,24 +80,66 @@ fun HomeScreen(
             }
 
             // ── 通知リスト ────
-            if (state.notifications.isEmpty() && !state.isLoading) {
-                EmptyState(message = "通知ログはまだありません")
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(
-                        items = state.notifications,
-                        key = { it.rawLogId },
-                    ) { item ->
-                        NotificationListItem(
-                            item = item,
-                            onClick = { onNotificationClick(item.notification.id) },
-                        )
+            when {
+                notifications.loadState.refresh is LoadState.Loading -> {
+                    LoadingState()
+                }
+
+                notifications.loadState.refresh is LoadState.Error -> {
+                    EmptyState(message = "通知一覧の読み込みに失敗しました")
+                }
+
+                notifications.itemCount == 0 -> {
+                    EmptyState(message = "通知ログはまだありません")
+                }
+
+                else -> {
+                    LazyColumn(
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(
+                            count = notifications.itemCount,
+                            key = notifications.itemKey { it.id },
+                        ) { index ->
+                            notifications[index]?.let { item ->
+                                NotificationListItem(
+                                    item = item,
+                                    onClick = { onNotificationClick(item.id) },
+                                )
+                            }
+                        }
+
+                        if (notifications.loadState.append is LoadState.Loading) {
+                            item {
+                                LoadingMoreState()
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LoadingState() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator()
+    }
+}
+
+@Composable
+private fun LoadingMoreState() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator()
     }
 }

@@ -2,85 +2,134 @@ package org.ukky.notitrace.data.db.dao
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.paging.PagingSource
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
+import org.ukky.notitrace.data.db.entity.NotificationListItemModel
 import org.ukky.notitrace.data.db.entity.NotificationEntity
-import org.ukky.notitrace.data.db.entity.ReceivedNotificationWithTag
 import org.ukky.notitrace.data.db.entity.NotificationWithTag
 
 @Dao
 interface NotificationDao {
 
-    // ── 一覧取得（Flow / リアルタイム更新） ────────────
+    // ── 一覧取得（Paging / リアルタイム更新） ────────────
 
     @Query(
         """
-        SELECT n.*,
-               COALESCE(r.id, -n.id) AS raw_log_id,
-               COALESCE(r.received_at, n.last_received_at) AS received_at,
+        SELECT n.id,
+               n.package_name,
+               n.title,
+               n.text,
+               n.big_text,
+               n.notification_type,
+               n.last_received_at AS received_at,
                a.tag,
                a.app_label
         FROM notifications n
-        LEFT JOIN notification_raw_logs r ON r.notification_id = n.id
         LEFT JOIN app_tags a ON n.package_name = a.package_name
-        ORDER BY received_at DESC, raw_log_id DESC
+        ORDER BY n.last_received_at DESC, n.id DESC
         """
     )
-    fun getAllReceivedWithTag(): Flow<List<ReceivedNotificationWithTag>>
+    fun getAllListItemsPaged(): PagingSource<Int, NotificationListItemModel>
 
     @Query(
         """
-        SELECT n.*,
-               COALESCE(r.id, -n.id) AS raw_log_id,
-               COALESCE(r.received_at, n.last_received_at) AS received_at,
+        SELECT n.id,
+               n.package_name,
+               n.title,
+               n.text,
+               n.big_text,
+               n.notification_type,
+               n.last_received_at AS received_at,
                a.tag,
                a.app_label
         FROM notifications n
-        LEFT JOIN notification_raw_logs r ON r.notification_id = n.id
         INNER JOIN app_tags a ON n.package_name = a.package_name
         WHERE a.tag = :tag
-        ORDER BY received_at DESC, raw_log_id DESC
+        ORDER BY n.last_received_at DESC, n.id DESC
         """
     )
-    fun getReceivedByTag(tag: String): Flow<List<ReceivedNotificationWithTag>>
+    fun getListItemsByTagPaged(tag: String): PagingSource<Int, NotificationListItemModel>
 
     // ── FTS 全文検索 ──────────────────────────────────
 
     @Query(
         """
-        SELECT n.*,
-               COALESCE(r.id, -n.id) AS raw_log_id,
-               COALESCE(r.received_at, n.last_received_at) AS received_at,
-               a.tag,
-               a.app_label
+        SELECT COUNT(*)
         FROM notifications n
-        LEFT JOIN notification_raw_logs r ON r.notification_id = n.id
         INNER JOIN notifications_fts fts ON n.id = fts.rowid
-        LEFT JOIN app_tags a ON n.package_name = a.package_name
         WHERE notifications_fts MATCH :query
-        ORDER BY received_at DESC, raw_log_id DESC
         """
     )
-    fun searchReceivedFts(query: String): Flow<List<ReceivedNotificationWithTag>>
+    suspend fun countSearchFts(query: String): Int
 
     @Query(
         """
-        SELECT n.*,
-               COALESCE(r.id, -n.id) AS raw_log_id,
-               COALESCE(r.received_at, n.last_received_at) AS received_at,
+        WITH fts_results AS (
+            SELECT n.id,
+                   n.package_name,
+                   n.title,
+                   n.text,
+                   n.big_text,
+                   n.notification_type,
+                   n.last_received_at AS received_at,
+                   a.tag,
+                   a.app_label
+            FROM notifications n
+            INNER JOIN notifications_fts fts ON n.id = fts.rowid
+            LEFT JOIN app_tags a ON n.package_name = a.package_name
+            WHERE notifications_fts MATCH :query
+        ),
+        fts_count AS (
+            SELECT COUNT(*) AS count FROM fts_results
+        )
+        SELECT *
+        FROM fts_results
+        UNION ALL
+        SELECT n.id,
+               n.package_name,
+               n.title,
+               n.text,
+               n.big_text,
+               n.notification_type,
+               n.last_received_at AS received_at,
                a.tag,
                a.app_label
         FROM notifications n
-        LEFT JOIN notification_raw_logs r ON r.notification_id = n.id
+        LEFT JOIN app_tags a ON n.package_name = a.package_name
+        WHERE (SELECT count FROM fts_count) = 0
+          AND (
+              n.title LIKE :pattern ESCAPE '\'
+              OR n.text LIKE :pattern ESCAPE '\'
+              OR n.big_text LIKE :pattern ESCAPE '\'
+              OR n.sub_text LIKE :pattern ESCAPE '\'
+          )
+        ORDER BY received_at DESC, id DESC
+        """
+    )
+    fun searchListItemsPaged(query: String, pattern: String): PagingSource<Int, NotificationListItemModel>
+
+    @Query(
+        """
+        SELECT n.id,
+               n.package_name,
+               n.title,
+               n.text,
+               n.big_text,
+               n.notification_type,
+               n.last_received_at AS received_at,
+               a.tag,
+               a.app_label
+        FROM notifications n
         LEFT JOIN app_tags a ON n.package_name = a.package_name
         WHERE n.title LIKE :pattern ESCAPE '\'
            OR n.text LIKE :pattern ESCAPE '\'
            OR n.big_text LIKE :pattern ESCAPE '\'
            OR n.sub_text LIKE :pattern ESCAPE '\'
-        ORDER BY received_at DESC, raw_log_id DESC
+        ORDER BY n.last_received_at DESC, n.id DESC
         """
     )
-    fun searchReceivedPartial(pattern: String): Flow<List<ReceivedNotificationWithTag>>
+    fun searchListItemsPartialPaged(pattern: String): PagingSource<Int, NotificationListItemModel>
 
     // ── 個別取得 ──────────────────────────────────────
 

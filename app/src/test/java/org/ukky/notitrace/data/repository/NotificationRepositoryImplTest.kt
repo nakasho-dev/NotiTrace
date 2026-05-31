@@ -1,24 +1,27 @@
 package org.ukky.notitrace.data.repository
 
-import app.cash.turbine.test
-import io.mockk.*
-import kotlinx.coroutines.flow.flow
+import androidx.paging.PagingSource
+import androidx.paging.PagingState
+import androidx.paging.testing.asSnapshot
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.ukky.notitrace.data.db.dao.NotificationDao
 import org.ukky.notitrace.data.db.dao.NotificationRawLogDao
 import org.ukky.notitrace.data.db.entity.NotificationEntity
-import org.ukky.notitrace.data.db.entity.NotificationRawLogEntity
-import org.ukky.notitrace.data.db.entity.ReceivedNotificationWithTag
+import org.ukky.notitrace.data.db.entity.NotificationListItemModel
 import org.ukky.notitrace.data.db.entity.NotificationWithTag
 import org.ukky.notitrace.data.db.entity.RawLogWithTag
 
-/**
- * NotificationRepositoryImpl の単体テスト（MockK で DAO をモック）
- */
 class NotificationRepositoryImplTest {
 
     private lateinit var dao: NotificationDao
@@ -31,8 +34,6 @@ class NotificationRepositoryImplTest {
         rawLogDao = mockk(relaxed = true)
         repository = NotificationRepositoryImpl(dao, rawLogDao)
     }
-
-    // ── save ──────────────────────────────────────────
 
     @Test
     fun `通知を保存するとINSERTされる`() = runTest {
@@ -67,108 +68,72 @@ class NotificationRepositoryImplTest {
         coEvery { dao.insert(any()) } returnsMany listOf(10L, 11L)
         coEvery { rawLogDao.insert(any()) } returns 1L
 
-        repository.save(createEntity(signature = "dup_sig", lastReceivedAt = 4000L))
-        repository.save(createEntity(signature = "dup_sig", lastReceivedAt = 5000L))
+        repository.save(createEntity(signature = "dup_sig", lastReceivedAt = 4_000L))
+        repository.save(createEntity(signature = "dup_sig", lastReceivedAt = 5_000L))
 
         coVerify(exactly = 2) { dao.insert(any()) }
     }
 
-    // ── 一覧取得 ──────────────────────────────────────
-
     @Test
-    fun `全通知をFlowで取得できる`() = runTest {
+    fun `全通知をPagingで取得できる`() = runTest {
         val mockList = listOf(
-            receivedNotification(createEntity(signature = "s1", title = "通知1"), rawLogId = 10L, receivedAt = 3000L, tag = "SNS", appLabel = "App1"),
-            receivedNotification(createEntity(signature = "s2", title = "通知2"), rawLogId = 11L, receivedAt = 2000L, tag = null, appLabel = null),
+            listItem(id = 10L, title = "通知1", receivedAt = 3_000L, tag = "SNS", appLabel = "App1"),
+            listItem(id = 11L, title = "通知2", receivedAt = 2_000L),
         )
-        every { dao.getAllReceivedWithTag() } returns flowOf(mockList)
+        every { dao.getAllListItemsPaged() } returns TestNotificationPagingSource(mockList)
 
-        repository.getAllWithTag().test {
-            val result = awaitItem()
-            assertEquals(2, result.size)
-            assertEquals("通知1", result[0].notification.title)
-            assertEquals("SNS", result[0].tag)
-            assertNull(result[1].tag)
-            cancelAndIgnoreRemainingEvents()
-        }
+        val result = repository.getAllListItems().asSnapshot()
+        assertEquals(2, result.size)
+        assertEquals("通知1", result[0].title)
+        assertEquals("SNS", result[0].tag)
+        assertNull(result[1].tag)
     }
-
-    // ── タグフィルタ ──────────────────────────────────
 
     @Test
     fun `タグで絞り込める`() = runTest {
         val filtered = listOf(
-            receivedNotification(createEntity(signature = "f1"), rawLogId = 20L, receivedAt = 4000L, tag = "仕事", appLabel = "SlackApp"),
+            listItem(id = 20L, title = "Title", receivedAt = 4_000L, tag = "仕事", appLabel = "SlackApp"),
         )
-        every { dao.getReceivedByTag("仕事") } returns flowOf(filtered)
+        every { dao.getListItemsByTagPaged("仕事") } returns TestNotificationPagingSource(filtered)
 
-        repository.getByTag("仕事").test {
-            val result = awaitItem()
-            assertEquals(1, result.size)
-            assertEquals("仕事", result[0].tag)
-            cancelAndIgnoreRemainingEvents()
-        }
+        val result = repository.getListItemsByTag("仕事").asSnapshot()
+        assertEquals(1, result.size)
+        assertEquals("仕事", result[0].tag)
     }
-
-    // ── 検索 ──────────────────────────────────────────
 
     @Test
     fun `FTS検索でマッチした通知を取得できる`() = runTest {
         val searchResult = listOf(
-            receivedNotification(createEntity(signature = "sr1", title = "東京天気"), rawLogId = 30L, receivedAt = 1000L, tag = null, appLabel = null),
+            listItem(id = 30L, title = "東京天気", receivedAt = 1_000L),
         )
-        every { dao.searchReceivedFts("東京") } returns flowOf(searchResult)
+        coEvery { dao.countSearchFts("東京") } returns 1
+        every { dao.searchListItemsPaged("東京", "%東京%") } returns TestNotificationPagingSource(searchResult)
 
-        repository.search("東京").test {
-            val result = awaitItem()
-            assertEquals(1, result.size)
-            assertEquals("東京天気", result[0].notification.title)
-            cancelAndIgnoreRemainingEvents()
-        }
+        val result = repository.searchListItems("東京").asSnapshot()
+        assertEquals(1, result.size)
+        assertEquals("東京天気", result[0].title)
 
-        verify(exactly = 1) { dao.searchReceivedFts("東京") }
-        verify(exactly = 0) { dao.searchReceivedPartial(any()) }
+        coVerify(exactly = 1) { dao.countSearchFts("東京") }
+        verify(exactly = 1) { dao.searchListItemsPaged("東京", "%東京%") }
+        verify(exactly = 0) { dao.searchListItemsPartialPaged(any()) }
     }
 
     @Test
-    fun `FTS検索が0件なら部分一致検索にフォールバックする`() = runTest {
+    fun `FTS検索が失敗すると部分一致検索にフォールバックする`() = runTest {
         val fallbackResult = listOf(
-            receivedNotification(createEntity(signature = "sr2", title = "東京都"), rawLogId = 31L, receivedAt = 1000L, tag = null, appLabel = null),
+            listItem(id = 31L, title = "100%完了", receivedAt = 1_000L),
         )
-        every { dao.searchReceivedFts("京") } returns flowOf(emptyList())
-        every { dao.searchReceivedPartial("%京%") } returns flowOf(fallbackResult)
+        coEvery { dao.countSearchFts("100%") } throws IllegalStateException("bad MATCH query")
+        every { dao.searchListItemsPartialPaged("%100\\%%") } returns TestNotificationPagingSource(fallbackResult)
 
-        repository.search("京").test {
-            val result = awaitItem()
-            assertEquals(1, result.size)
-            assertEquals("東京都", result[0].notification.title)
-            cancelAndIgnoreRemainingEvents()
-        }
+        val result = repository.searchListItems("100%").asSnapshot()
+        assertEquals(1, result.size)
+        assertEquals("100%完了", result[0].title)
 
-        verify(exactly = 1) { dao.searchReceivedFts("京") }
-        verify(exactly = 1) { dao.searchReceivedPartial("%京%") }
+        coVerify(exactly = 1) { dao.countSearchFts("100%") }
+        verify(exactly = 1) { dao.searchListItemsPartialPaged("%100\\%%") }
+        verify(exactly = 0) { dao.searchListItemsPaged(any(), any()) }
     }
-
-    @Test
-    fun `FTS検索が失敗しても部分一致検索にフォールバックする`() = runTest {
-        val fallbackResult = listOf(
-            receivedNotification(createEntity(signature = "sr3", title = "100%完了"), rawLogId = 32L, receivedAt = 1000L, tag = null, appLabel = null),
-        )
-        every { dao.searchReceivedFts("100%") } returns flow { error("bad MATCH query") }
-        every { dao.searchReceivedPartial("%100\\%%") } returns flowOf(fallbackResult)
-
-        repository.search("100%").test {
-            val result = awaitItem()
-            assertEquals(1, result.size)
-            assertEquals("100%完了", result[0].notification.title)
-            cancelAndIgnoreRemainingEvents()
-        }
-
-        verify(exactly = 1) { dao.searchReceivedFts("100%") }
-        verify(exactly = 1) { dao.searchReceivedPartial("%100\\%%") }
-    }
-
-    // ── 削除 ──────────────────────────────────────────
 
     @Test
     fun `IDで通知を削除する`() = runTest {
@@ -182,8 +147,6 @@ class NotificationRepositoryImplTest {
         coVerify(exactly = 1) { rawLogDao.deleteAll() }
         coVerify(exactly = 1) { dao.deleteAll() }
     }
-
-    // ── JSONL エクスポート用一括取得 ─────────────────────
 
     @Test
     fun `getForExport_tagNull_全件をAllWithTagListから取得する`() = runTest {
@@ -222,26 +185,24 @@ class NotificationRepositoryImplTest {
         coVerify(exactly = 1) { dao.getByTagList("存在しないタグ") }
     }
 
-    // ── 生データ JSONL エクスポート用一括取得 ──────────────
-
     @Test
     fun `getForRawExport_tagNull_全件を受信順で取得する`() = runTest {
         val rawItems = listOf(
-            RawLogWithTag("""{"a":1}""", 1000L, "com.a", "local", "SNS", "App1"),
-            RawLogWithTag("""{"b":2}""", 2000L, "com.b", "remote_push", null, null),
+            RawLogWithTag("""{"a":1}""", 1_000L, "com.a", "local", "SNS", "App1"),
+            RawLogWithTag("""{"b":2}""", 2_000L, "com.b", "remote_push", null, null),
         )
         coEvery { rawLogDao.getAllWithTagOrderByReceivedAt() } returns rawItems
 
         val result = repository.getForRawExport(null)
         assertEquals(2, result.size)
-        assertEquals(1000L, result[0].receivedAt)
-        assertEquals(2000L, result[1].receivedAt)
+        assertEquals(1_000L, result[0].receivedAt)
+        assertEquals(2_000L, result[1].receivedAt)
     }
 
     @Test
     fun `getForRawExport_tag指定_指定タグでフィルタする`() = runTest {
         val rawItems = listOf(
-            RawLogWithTag("""{"c":3}""", 3000L, "com.c", "local", "仕事", "Slack"),
+            RawLogWithTag("""{"c":3}""", 3_000L, "com.c", "local", "仕事", "Slack"),
         )
         coEvery { rawLogDao.getByTagOrderByReceivedAt("仕事") } returns rawItems
 
@@ -250,33 +211,26 @@ class NotificationRepositoryImplTest {
         assertEquals("仕事", result[0].tag)
     }
 
-    // ── rawLog 保持期間クリーンアップ ─────────────────────
-
     @Test
     fun `cleanupOldRawLogs_指定時刻より古いrawLogを削除する`() = runTest {
-        coEvery { rawLogDao.deleteOlderThan(5000L) } returns 3
+        coEvery { rawLogDao.deleteOlderThan(5_000L) } returns 3
 
-        val deleted = repository.cleanupOldRawLogs(5000L)
+        val deleted = repository.cleanupOldRawLogs(5_000L)
         assertEquals(3, deleted)
-        coVerify(exactly = 1) { rawLogDao.deleteOlderThan(5000L) }
+        coVerify(exactly = 1) { rawLogDao.deleteOlderThan(5_000L) }
     }
-
-    // ── 通知実績パッケージ一覧 ──────────────────────────
 
     @Test
     fun `通知実績のある全パッケージ名をFlowで取得できる`() = runTest {
         every { dao.getDistinctPackageNames() } returns flowOf(listOf("com.a", "com.b"))
 
-        repository.getDistinctPackageNames().test {
-            val result = awaitItem()
-            assertEquals(2, result.size)
-            assertEquals("com.a", result[0])
-            assertEquals("com.b", result[1])
-            cancelAndIgnoreRemainingEvents()
+        repository.getDistinctPackageNames().collect {
+            assertEquals(2, it.size)
+            assertEquals("com.a", it[0])
+            assertEquals("com.b", it[1])
+            return@collect
         }
     }
-
-    // ── ヘルパー ──────────────────────────────────────
 
     @Suppress("DEPRECATION")
     private fun createEntity(
@@ -284,7 +238,7 @@ class NotificationRepositoryImplTest {
         signature: String,
         title: String? = "Title",
         receiveCount: Int = 1,
-        lastReceivedAt: Long = 1000L,
+        lastReceivedAt: Long = 1_000L,
         notificationType: String = "local",
         rawJson: String = "{}",
     ) = NotificationEntity(
@@ -301,21 +255,43 @@ class NotificationRepositoryImplTest {
         notificationType = notificationType,
         isRemote = notificationType == "remote_push" || notificationType == "remote_silent",
         receiveCount = receiveCount,
-        firstReceivedAt = 1000L,
+        firstReceivedAt = 1_000L,
         lastReceivedAt = lastReceivedAt,
     )
 
-    private fun receivedNotification(
-        notification: NotificationEntity,
-        rawLogId: Long,
+    private fun listItem(
+        id: Long,
+        title: String,
         receivedAt: Long,
-        tag: String?,
-        appLabel: String?,
-    ) = ReceivedNotificationWithTag(
-        notification = notification,
-        rawLogId = rawLogId,
+        tag: String? = null,
+        appLabel: String? = null,
+    ) = NotificationListItemModel(
+        id = id,
+        packageName = "com.test",
+        title = title,
+        text = "text",
+        bigText = null,
+        notificationType = "local",
         receivedAt = receivedAt,
         tag = tag,
         appLabel = appLabel,
     )
+
+    private class TestNotificationPagingSource(
+        private val items: List<NotificationListItemModel>,
+    ) : PagingSource<Int, NotificationListItemModel>() {
+
+        override fun getRefreshKey(state: PagingState<Int, NotificationListItemModel>): Int? = null
+
+        override suspend fun load(params: LoadParams<Int>): LoadResult<Int, NotificationListItemModel> {
+            val start = params.key ?: 0
+            val end = (start + params.loadSize).coerceAtMost(items.size)
+            val data = if (start >= items.size) emptyList() else items.subList(start, end)
+            return LoadResult.Page(
+                data = data,
+                prevKey = if (start == 0) null else maxOf(start - params.loadSize, 0),
+                nextKey = if (end < items.size) end else null,
+            )
+        }
+    }
 }

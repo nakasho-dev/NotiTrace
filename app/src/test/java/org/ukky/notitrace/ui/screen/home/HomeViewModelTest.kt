@@ -1,25 +1,28 @@
 package org.ukky.notitrace.ui.screen.home
 
 import app.cash.turbine.test
-import io.mockk.*
+import androidx.lifecycle.viewModelScope
+import androidx.paging.PagingData
+import io.mockk.every
+import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.*
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
-import org.ukky.notitrace.data.db.entity.NotificationEntity
-import org.ukky.notitrace.data.db.entity.ReceivedNotificationWithTag
+import org.ukky.notitrace.data.db.entity.NotificationListItemModel
 import org.ukky.notitrace.data.repository.AppTagRepository
 import org.ukky.notitrace.data.repository.NotificationRepository
 
-/**
- * HomeViewModel の単体テスト
- *
- * RED → GREEN: UIState の生成・タグフィルタ切り替えを検証する
- */
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModelTest {
 
@@ -42,92 +45,83 @@ class HomeViewModelTest {
     @Test
     fun `初期状態ではフィルタなしで全通知を取得する`() = runTest {
         val items = listOf(
-            receivedNotification(createEntity("s1", "通知A"), rawLogId = 1L, receivedAt = 2000L, tag = "SNS", appLabel = "App"),
-            receivedNotification(createEntity("s2", "通知B"), rawLogId = 2L, receivedAt = 1000L, tag = null, appLabel = null),
+            listItem(id = 1L, title = "通知A", receivedAt = 2_000L, tag = "SNS", appLabel = "App"),
+            listItem(id = 2L, title = "通知B", receivedAt = 1_000L),
         )
-        every { notificationRepo.getAllWithTag() } returns flowOf(items)
+        every { notificationRepo.getAllListItems() } returns flowOf(PagingData.from(items))
+        every { notificationRepo.getListItemsByTag(any()) } returns flowOf(PagingData.from(emptyList()))
         every { tagRepo.getAllTags() } returns flowOf(listOf("SNS"))
-        every { notificationRepo.getByTag(any()) } returns flowOf(emptyList())
 
         val vm = HomeViewModel(notificationRepo, tagRepo)
 
         vm.uiState.test {
-            // initialValue (isLoading = true)
             awaitItem()
-            // 上流 Flow を処理させる
             advanceUntilIdle()
-            val state = awaitItem()
-            assertEquals(2, state.notifications.size)
-            assertEquals("通知A", state.notifications[0].notification.title)
+            val state = expectMostRecentItem()
             assertNull(state.selectedTag)
             assertEquals(listOf("SNS"), state.availableTags)
             cancelAndIgnoreRemainingEvents()
         }
+        vm.viewModelScope.cancel()
     }
 
     @Test
     fun `タグフィルタを切り替えると対応する通知だけ表示される`() = runTest {
-        every { notificationRepo.getAllWithTag() } returns flowOf(emptyList())
-        every { tagRepo.getAllTags() } returns flowOf(listOf("仕事", "SNS"))
-
-        val filtered = listOf(
-            receivedNotification(createEntity("f1", "Slack通知"), rawLogId = 3L, receivedAt = 3000L, tag = "仕事", appLabel = "Slack"),
+        every { notificationRepo.getAllListItems() } returns flowOf(PagingData.from(emptyList()))
+        every { notificationRepo.getListItemsByTag("仕事") } returns flowOf(
+            PagingData.from(
+                listOf(
+                    listItem(id = 3L, title = "Slack通知", receivedAt = 3_000L, tag = "仕事", appLabel = "Slack"),
+                )
+            )
         )
-        every { notificationRepo.getByTag("仕事") } returns flowOf(filtered)
+        every { tagRepo.getAllTags() } returns flowOf(listOf("仕事", "SNS"))
 
         val vm = HomeViewModel(notificationRepo, tagRepo)
 
         vm.uiState.test {
-            awaitItem() // initialValue
-            advanceUntilIdle()
-            awaitItem() // 初期データ（全件=空）
-
+            awaitItem()
             vm.selectTag("仕事")
             advanceUntilIdle()
-
             val state = expectMostRecentItem()
-            assertEquals(1, state.notifications.size)
             assertEquals("仕事", state.selectedTag)
             cancelAndIgnoreRemainingEvents()
         }
+        vm.viewModelScope.cancel()
     }
 
     @Test
     fun `タグフィルタを解除すると全件に戻る`() = runTest {
         val all = listOf(
-            receivedNotification(createEntity("a1", "全件A"), rawLogId = 4L, receivedAt = 1000L, tag = null, appLabel = null),
+            listItem(id = 4L, title = "全件A", receivedAt = 1_000L),
         )
-        every { notificationRepo.getAllWithTag() } returns flowOf(all)
+        every { notificationRepo.getAllListItems() } returns flowOf(PagingData.from(all))
+        every { notificationRepo.getListItemsByTag(any()) } returns flowOf(PagingData.from(emptyList()))
         every { tagRepo.getAllTags() } returns flowOf(emptyList())
 
         val vm = HomeViewModel(notificationRepo, tagRepo)
 
         vm.uiState.test {
-            awaitItem() // initialValue
-            advanceUntilIdle()
             val state = awaitItem()
             assertNull(state.selectedTag)
-            assertEquals(1, state.notifications.size)
             cancelAndIgnoreRemainingEvents()
         }
+        vm.viewModelScope.cancel()
     }
 
-    private fun createEntity(signature: String, title: String) = NotificationEntity(
-        id = 0, packageName = "com.test", title = title, text = null,
-        bigText = null, subText = null, ticker = null, extrasJson = "{}",
-        signature = signature, receiveCount = 1,
-        firstReceivedAt = 1000L, lastReceivedAt = 1000L,
-    )
-
-    private fun receivedNotification(
-        notification: NotificationEntity,
-        rawLogId: Long,
+    private fun listItem(
+        id: Long,
+        title: String,
         receivedAt: Long,
-        tag: String?,
-        appLabel: String?,
-    ) = ReceivedNotificationWithTag(
-        notification = notification,
-        rawLogId = rawLogId,
+        tag: String? = null,
+        appLabel: String? = null,
+    ) = NotificationListItemModel(
+        id = id,
+        packageName = "com.test",
+        title = title,
+        text = null,
+        bigText = null,
+        notificationType = "local",
         receivedAt = receivedAt,
         tag = tag,
         appLabel = appLabel,

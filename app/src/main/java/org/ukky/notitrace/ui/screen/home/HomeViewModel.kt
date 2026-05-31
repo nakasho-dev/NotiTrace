@@ -1,10 +1,13 @@
 package org.ukky.notitrace.ui.screen.home
 
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
+import org.ukky.notitrace.data.db.entity.NotificationListItemModel
 import org.ukky.notitrace.data.repository.AppTagRepository
 import org.ukky.notitrace.data.repository.NotificationRepository
 import javax.inject.Inject
@@ -18,26 +21,25 @@ class HomeViewModel @Inject constructor(
 
     private val _selectedTag = MutableStateFlow<String?>(null)
 
-    private val notifications = _selectedTag.flatMapLatest { tag ->
-        if (tag == null) {
-            notificationRepo.getAllWithTag()
-        } else {
-            notificationRepo.getByTag(tag)
+    val notifications: Flow<PagingData<NotificationListItemModel>> = _selectedTag
+        .flatMapLatest { tag ->
+            if (tag == null) {
+                notificationRepo.getAllListItems()
+            } else {
+                notificationRepo.getListItemsByTag(tag)
+            }
         }
-    }
+        .cachedIn(viewModelScope)
 
     private val availableTags = tagRepo.getAllTags()
 
     val uiState: StateFlow<HomeUiState> = combine(
-        notifications,
         availableTags,
         _selectedTag,
-    ) { notifs, tags, selected ->
+    ) { tags, selected ->
         HomeUiState(
-            notifications = notifs,
             availableTags = tags,
             selectedTag = selected,
-            isLoading = false,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -49,4 +51,3 @@ class HomeViewModel @Inject constructor(
         _selectedTag.value = tag
     }
 }
-

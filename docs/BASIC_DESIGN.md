@@ -105,7 +105,8 @@
   - タグフィルタ用の横スクロール ChipGroup（上部）
   - 検索 / タグ管理 / 設定へのナビゲーション（TopAppBar または BottomBar）
 - **表示仕様**: 同一内容の通知でもまとめず、受信ごとに 1 行ずつ表示する
-- **データ更新**: `Flow` による自動更新。新しい通知が届くとリアルタイム反映
+- **データ更新**: `Flow<PagingData<NotificationListItemModel>>` による自動更新。新しい通知が届くとリアルタイム反映
+- **パフォーマンス方針**: 一覧は `notifications` テーブルを起点に `raw_json` / `extras_json` を含まない軽量 DTO をページング取得し、初回表示で全件を一括読込しない
 
 #### 3.3.3 通知詳細画面
 
@@ -141,6 +142,7 @@
   - 結果リスト（ホーム画面と同一の `NotificationListItem` を再利用）
   - 検索対象: title / text / bigText / subText
 - **日本語対応**: `unicode61` トークナイザを利用しつつ、ヒットしない短い語句や 1 文字検索は部分一致フォールバックで補完する
+- **パフォーマンス方針**: 検索結果もホーム画面と同じ軽量 DTO を Paging で取得し、FTS 成否判定後に検索モードを切り替える
 
 #### 3.3.5 タグ管理画面
 
@@ -186,9 +188,9 @@
 |---|---|---|---|
 | F-01 | 通知キャプチャ | **必須** | `NotificationListenerService` で全通知を取得し DB に保存 |
 | F-02 | 通知シグネチャ生成 | **必須** | `packageName + title + text + bigText + subText` から SHA-256 を生成し、通知相関用メタデータとして保存 |
-| F-03 | 通知一覧表示 | **必須** | 保存済み通知を受信順に一覧表示。内容が同一でもまとめない |
+| F-03 | 通知一覧表示 | **必須** | 保存済み通知を受信順に一覧表示。内容が同一でもまとめない。軽量 DTO + Paging により大量件数でも初回表示を高速化する |
 | F-04 | 通知詳細表示 | **必須** | 通知の全フィールド・extras・受信統計を閲覧 |
-| F-05 | 全文検索 | **必須** | FTS4 による高速な全文検索を優先し、0件時は部分一致検索へフォールバック（日本語対応） |
+| F-05 | 全文検索 | **必須** | FTS4 による高速な全文検索を優先し、0件時は部分一致検索へフォールバック（日本語対応）。結果一覧は Paging で段階取得する |
 | F-06 | タグ管理 | **必須** | パッケージ単位でのタグ付与。タグによるフィルタリング |
 | F-07 | データベース暗号化 | **必須** | Room + SQLCipher による DB 暗号化。鍵は Android Keystore 管理 |
 | F-08 | バックアップ / リストア | **必須** | 暗号化 JSON の SAF 経由エクスポート・インポート |
@@ -372,6 +374,7 @@ MVVM + Repository + Clean Architecture の簡易構成を採用する。
 │  │  NotiTraceListenerService                            │  │
 │  │  (NotificationListenerService)                     │  │
 │  │  → Repository 経由で DB 書き込み                     │  │
+│  │  → 一覧/検索は Paging + 軽量 DTO で段階取得           │  │
 │  └────────────────────────────────────────────────────┘  │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
@@ -402,11 +405,12 @@ org.ukky.notitrace/
 │   │   │   ├── NotificationEntity.kt  # 通知テーブル
 │   │   │   ├── NotificationFtsEntity.kt # FTS4 仮想テーブル
 │   │   │   ├── NotificationType.kt    # 通知種別 enum（7 種別）
+│   │   │   ├── NotificationListItemModel.kt # 一覧/検索用の軽量 DTO
 │   │   │   ├── NotificationRawLogEntity.kt # 受信ごとの生データ JSON 子テーブル（ON DELETE CASCADE）
 │   │   │   ├── RawLogWithTag.kt       # rawLog + タグ情報の POJO（JSONL 生データエクスポート用）
 │   │   │   └── AppTagEntity.kt        # アプリタグテーブル
 │   │   ├── dao/
-│   │   │   ├── NotificationDao.kt     # 通知 CRUD + FTS 検索
+│   │   │   ├── NotificationDao.kt     # 通知 CRUD + Paging 一覧/FTS 検索
 │   │   │   ├── NotificationRawLogDao.kt # rawLog CRUD + エクスポート用クエリ
 │   │   │   └── AppTagDao.kt           # タグ CRUD
 │   │   └── converter/
@@ -617,58 +621,84 @@ data class NotificationFtsEntity(
 
 #### 通知一覧取得（タグ付き）
 ```sql
-SELECT n.*,
-       COALESCE(r.id, -n.id) AS raw_log_id,
-       COALESCE(r.received_at, n.last_received_at) AS received_at,
+SELECT n.id,
+       n.package_name,
+       n.title,
+       n.text,
+       n.big_text,
+       n.notification_type,
+       n.last_received_at AS received_at,
        a.tag, a.app_label
 FROM notifications n
-LEFT JOIN notification_raw_logs r ON r.notification_id = n.id
 LEFT JOIN app_tags a ON n.package_name = a.package_name
-ORDER BY received_at DESC, raw_log_id DESC
+ORDER BY n.last_received_at DESC, n.id DESC
 ```
 
 #### タグフィルタ付き一覧
 ```sql
-SELECT n.*,
-       COALESCE(r.id, -n.id) AS raw_log_id,
-       COALESCE(r.received_at, n.last_received_at) AS received_at,
+SELECT n.id,
+       n.package_name,
+       n.title,
+       n.text,
+       n.big_text,
+       n.notification_type,
+       n.last_received_at AS received_at,
        a.tag, a.app_label
 FROM notifications n
-LEFT JOIN notification_raw_logs r ON r.notification_id = n.id
 INNER JOIN app_tags a ON n.package_name = a.package_name
 WHERE a.tag = :tag
-ORDER BY received_at DESC, raw_log_id DESC
+ORDER BY n.last_received_at DESC, n.id DESC
 ```
 
 #### 全文検索
 ```sql
-SELECT n.*,
-       COALESCE(r.id, -n.id) AS raw_log_id,
-       COALESCE(r.received_at, n.last_received_at) AS received_at,
-       a.tag, a.app_label
+WITH fts_results AS (
+    SELECT n.id,
+           n.package_name,
+           n.title,
+           n.text,
+           n.big_text,
+           n.notification_type,
+           n.last_received_at AS received_at,
+           a.tag,
+           a.app_label
+    FROM notifications n
+    INNER JOIN notifications_fts fts ON n.id = fts.rowid
+    LEFT JOIN app_tags a ON n.package_name = a.package_name
+    WHERE notifications_fts MATCH :query
+),
+fts_count AS (
+    SELECT COUNT(*) AS count FROM fts_results
+)
+SELECT *
+FROM fts_results
+UNION ALL
+SELECT n.id,
+       n.package_name,
+       n.title,
+       n.text,
+       n.big_text,
+       n.notification_type,
+       n.last_received_at AS received_at,
+       a.tag,
+       a.app_label
 FROM notifications n
-LEFT JOIN notification_raw_logs r ON r.notification_id = n.id
-INNER JOIN notifications_fts fts ON n.id = fts.rowid
 LEFT JOIN app_tags a ON n.package_name = a.package_name
-WHERE notifications_fts MATCH :query
-ORDER BY received_at DESC, raw_log_id DESC
+WHERE (SELECT count FROM fts_count) = 0
+  AND (
+      n.title LIKE :pattern ESCAPE '\\'
+      OR n.text LIKE :pattern ESCAPE '\\'
+      OR n.big_text LIKE :pattern ESCAPE '\\'
+      OR n.sub_text LIKE :pattern ESCAPE '\\'
+  )
+ORDER BY received_at DESC, id DESC
 ```
 
-#### 全文検索フォールバック（0件時 / MATCH 解釈不可時）
-```sql
-SELECT n.*,
-       COALESCE(r.id, -n.id) AS raw_log_id,
-       COALESCE(r.received_at, n.last_received_at) AS received_at,
-       a.tag, a.app_label
-FROM notifications n
-LEFT JOIN notification_raw_logs r ON r.notification_id = n.id
-LEFT JOIN app_tags a ON n.package_name = a.package_name
-WHERE n.title LIKE :pattern ESCAPE '\\'
-   OR n.text LIKE :pattern ESCAPE '\\'
-   OR n.big_text LIKE :pattern ESCAPE '\\'
-   OR n.sub_text LIKE :pattern ESCAPE '\\'
-ORDER BY received_at DESC, raw_log_id DESC
-```
+#### 一覧/検索の設計上の留意点
+
+- 一覧と検索は `NotificationListItemModel` を返し、詳細画面でのみ `NotificationEntity` の全文カラム（`raw_json` / `extras_json`）を読む
+- Paging は Room の `PagingSource` を利用し、通知追加やタグ変更時は自動 invalidation により一覧を更新する
+- FTS クエリが SQLite レベルで解釈できない場合のみ Repository 層で `LIKE` 専用 PagingSource に切り替える
 
 #### 通知保存
 ```sql

@@ -1,33 +1,33 @@
 package org.ukky.notitrace.data.db.dao
 
 import android.content.Context
+import androidx.paging.PagingSource
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.test
 import kotlinx.coroutines.test.runTest
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.ukky.notitrace.data.db.NotiTraceDatabase
+import org.ukky.notitrace.data.db.entity.AppTagEntity
 import org.ukky.notitrace.data.db.entity.NotificationEntity
-import org.ukky.notitrace.data.db.entity.NotificationRawLogEntity
+import org.ukky.notitrace.data.db.entity.NotificationListItemModel
 
-/**
- * NotificationDao の単体テスト（Robolectric + in-memory DB）
- *
- * RED フェーズ: DAO/Entity/Database が未実装の段階で先にテストを定義する
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class NotificationDaoTest {
 
     private lateinit var db: NotiTraceDatabase
     private lateinit var dao: NotificationDao
-    private lateinit var rawLogDao: NotificationRawLogDao
+    private lateinit var tagDao: AppTagDao
 
     @Before
     fun setUp() {
@@ -36,15 +36,13 @@ class NotificationDaoTest {
             .allowMainThreadQueries()
             .build()
         dao = db.notificationDao()
-        rawLogDao = db.notificationRawLogDao()
+        tagDao = db.appTagDao()
     }
 
     @After
     fun tearDown() {
         db.close()
     }
-
-    // ── INSERT / SELECT ─────────────────────────────────
 
     @Test
     fun `通知を挿入し取得できる`() = runTest {
@@ -64,37 +62,38 @@ class NotificationDaoTest {
     @Test
     fun `同一signatureでも複数挿入できる`() = runTest {
         dao.insert(createEntity(signature = "dup_sig", title = "重複通知A"))
-        dao.insert(createEntity(signature = "dup_sig", title = "重複通知B", lastReceivedAt = 2000L))
+        dao.insert(createEntity(signature = "dup_sig", title = "重複通知B", lastReceivedAt = 2_000L))
 
         val all = dao.getAllForBackup()
         assertEquals(2, all.size)
         assertEquals(2, all.count { it.signature == "dup_sig" })
     }
 
-    // ── 一覧取得 (Flow) ──────────────────────────────────
-
     @Test
     fun `全通知を受信時刻降順で取得できる`() = runTest {
-        val oldId = dao.insert(createEntity(signature = "s1", title = "古い", lastReceivedAt = 1000L))
-        val newestId = dao.insert(createEntity(signature = "s2", title = "新しい", lastReceivedAt = 3000L))
-        val legacyId = dao.insert(createEntity(signature = "s3", title = "旧データ", lastReceivedAt = 2000L))
+        dao.insert(createEntity(signature = "s1", title = "古い", lastReceivedAt = 1_000L))
+        dao.insert(createEntity(signature = "s2", title = "新しい", lastReceivedAt = 3_000L))
+        dao.insert(createEntity(signature = "s3", title = "中間", lastReceivedAt = 2_000L))
 
-        rawLogDao.insert(NotificationRawLogEntity(notificationId = oldId, rawJson = """{"n":1}""", receivedAt = 1000L))
-        rawLogDao.insert(NotificationRawLogEntity(notificationId = newestId, rawJson = """{"n":2}""", receivedAt = 3000L))
-
-        dao.getAllReceivedWithTag().test {
-            val list = awaitItem()
-            assertEquals(3, list.size)
-            assertEquals("新しい", list[0].notification.title)
-            assertEquals(3000L, list[0].receivedAt)
-            assertEquals("旧データ", list[1].notification.title)
-            assertEquals(-legacyId, list[1].rawLogId)
-            assertEquals("古い", list[2].notification.title)
-            cancelAndIgnoreRemainingEvents()
-        }
+        val list = dao.getAllListItemsPaged().loadFirstPage()
+        assertEquals(3, list.size)
+        assertEquals("新しい", list[0].title)
+        assertEquals(3_000L, list[0].receivedAt)
+        assertEquals("中間", list[1].title)
+        assertEquals("古い", list[2].title)
     }
 
-    // ── 削除 ──────────────────────────────────────────────
+    @Test
+    fun `タグで絞り込んだ一覧を取得できる`() = runTest {
+        dao.insert(createEntity(signature = "tag1", packageName = "com.example.slack", title = "Slack"))
+        dao.insert(createEntity(signature = "tag2", packageName = "com.example.mail", title = "Mail"))
+        tagDao.upsert(AppTagEntity(packageName = "com.example.slack", tag = "仕事", appLabel = "Slack"))
+
+        val list = dao.getListItemsByTagPaged("仕事").loadFirstPage()
+        assertEquals(1, list.size)
+        assertEquals("Slack", list.first().appLabel)
+        assertEquals("仕事", list.first().tag)
+    }
 
     @Test
     fun `IDで通知を削除できる`() = runTest {
@@ -118,37 +117,22 @@ class NotificationDaoTest {
         assertTrue(all.isEmpty())
     }
 
-    // ── FTS 検索 ──────────────────────────────────────────
-    // NOTE: Robolectric の SQLite は unicode61 トークナイザ未対応。
-    //       FTS4 の日本語検索は実機/エミュレータの androidTest で検証すること。
-    //       ここでは DAO の search メソッドが呼べることだけ確認する。
-
     @Test
     fun `FTS検索でクエリが実行できる`() = runTest {
         dao.insert(createEntity(signature = "fts1", title = "hello world", text = "sample"))
         dao.insert(createEntity(signature = "fts2", title = "goodbye", text = "another"))
 
-        // Robolectric では FTS content sync triggers が動かない場合があるため
-        // 結果件数ではなく「例外なく実行できること」を検証する
-        dao.searchReceivedFts("hello").test {
-            val results = awaitItem()
-            // FTS が動けば 1 件、動かなければ 0 件（どちらも正常）
-            assertTrue(results.size <= 1)
-            cancelAndIgnoreRemainingEvents()
-        }
+        dao.countSearchFts("hello")
     }
 
     @Test
-    fun `部分一致検索で1文字の日本語にもヒットする`() = runTest {
+    fun `1文字検索はFTSが0件でも部分一致へフォールバックする`() = runTest {
         dao.insert(createEntity(signature = "like1", title = "東京都", text = "天気予報"))
         dao.insert(createEntity(signature = "like2", title = "大阪府", text = "お知らせ"))
 
-        dao.searchReceivedPartial("%京%").test {
-            val results = awaitItem()
-            assertEquals(1, results.size)
-            assertEquals("東京都", results.first().notification.title)
-            cancelAndIgnoreRemainingEvents()
-        }
+        val results = dao.searchListItemsPaged("京", "%京%").loadFirstPage()
+        assertEquals(1, results.size)
+        assertEquals("東京都", results.first().title)
     }
 
     @Test
@@ -156,15 +140,10 @@ class NotificationDaoTest {
         dao.insert(createEntity(signature = "like3", title = "100%完了", text = "進捗100%"))
         dao.insert(createEntity(signature = "like4", title = "1000件", text = "進捗あり"))
 
-        dao.searchReceivedPartial("%100\\%%").test {
-            val results = awaitItem()
-            assertEquals(1, results.size)
-            assertEquals("100%完了", results.first().notification.title)
-            cancelAndIgnoreRemainingEvents()
-        }
+        val results = dao.searchListItemsPartialPaged("%100\\%%").loadFirstPage()
+        assertEquals(1, results.size)
+        assertEquals("100%完了", results.first().title)
     }
-
-    // ── ヘルパー ──────────────────────────────────────────
 
     private fun createEntity(
         signature: String,
@@ -176,7 +155,7 @@ class NotificationDaoTest {
         ticker: String? = null,
         extrasJson: String = "{}",
         receiveCount: Int = 1,
-        firstReceivedAt: Long = 1000L,
+        firstReceivedAt: Long = 1_000L,
         lastReceivedAt: Long = firstReceivedAt,
     ) = NotificationEntity(
         id = 0,
@@ -187,9 +166,27 @@ class NotificationDaoTest {
         subText = subText,
         ticker = ticker,
         extrasJson = extrasJson,
+        rawJson = "{}",
         signature = signature,
+        notificationType = "local",
+        isRemote = false,
         receiveCount = receiveCount,
         firstReceivedAt = firstReceivedAt,
         lastReceivedAt = lastReceivedAt,
     )
+
+    private suspend fun PagingSource<Int, NotificationListItemModel>.loadFirstPage(): List<NotificationListItemModel> {
+        val result = load(
+            PagingSource.LoadParams.Refresh(
+                key = null,
+                loadSize = 50,
+                placeholdersEnabled = false,
+            )
+        )
+        return when (result) {
+            is PagingSource.LoadResult.Page -> result.data
+            is PagingSource.LoadResult.Error -> throw result.throwable
+            is PagingSource.LoadResult.Invalid -> error("PagingSource invalidated")
+        }
+    }
 }

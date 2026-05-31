@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -19,19 +20,18 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import org.ukky.notitrace.data.db.entity.NotificationListItemModel
 import org.ukky.notitrace.data.db.entity.NotificationType
-import org.ukky.notitrace.data.db.entity.ReceivedNotificationWithTag
 import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
 fun NotificationListItem(
-    item: ReceivedNotificationWithTag,
+    item: NotificationListItemModel,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val n = item.notification
-    val dateFormat = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
+    val dateFormat = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
 
     Card(
         modifier = modifier
@@ -49,7 +49,7 @@ fun NotificationListItem(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = item.appLabel ?: n.packageName,
+                    text = item.appLabel ?: item.packageName,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.weight(1f),
@@ -65,9 +65,9 @@ fun NotificationListItem(
             Spacer(Modifier.height(4.dp))
 
             // ── タイトル ────
-            if (!n.title.isNullOrBlank()) {
+            if (!item.title.isNullOrBlank()) {
                 Text(
-                    text = n.title,
+                    text = item.title,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -76,7 +76,7 @@ fun NotificationListItem(
             }
 
             // ── 本文（1行省略） ────
-            val body = n.bigText ?: n.text
+            val body = item.bigText ?: item.text
             if (!body.isNullOrBlank()) {
                 Text(
                     text = body,
@@ -102,7 +102,7 @@ fun NotificationListItem(
                 )
 
                 NotificationTypeChip(
-                    type = NotificationType.fromCode(n.notificationType),
+                    type = NotificationType.fromCode(item.notificationType),
                 )
             }
         }

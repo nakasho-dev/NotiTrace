@@ -1,44 +1,66 @@
 package org.ukky.notitrace.data.repository
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import android.database.sqlite.SQLiteException
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import org.ukky.notitrace.data.db.dao.NotificationDao
 import org.ukky.notitrace.data.db.dao.NotificationRawLogDao
+import org.ukky.notitrace.data.db.entity.NotificationListItemModel
 import org.ukky.notitrace.data.db.entity.NotificationEntity
 import org.ukky.notitrace.data.db.entity.NotificationRawLogEntity
-import org.ukky.notitrace.data.db.entity.ReceivedNotificationWithTag
 import org.ukky.notitrace.data.db.entity.NotificationWithTag
 import org.ukky.notitrace.data.db.entity.RawLogWithTag
 import javax.inject.Inject
 import javax.inject.Singleton
 
-@OptIn(ExperimentalCoroutinesApi::class)
 @Singleton
 class NotificationRepositoryImpl @Inject constructor(
     private val dao: NotificationDao,
     private val rawLogDao: NotificationRawLogDao,
 ) : NotificationRepository {
 
-    override fun getAllWithTag(): Flow<List<ReceivedNotificationWithTag>> =
-        dao.getAllReceivedWithTag()
+    override fun getAllListItems(): Flow<PagingData<NotificationListItemModel>> =
+        Pager(
+            config = PagingConfig(
+                pageSize = PAGE_SIZE,
+                initialLoadSize = PAGE_SIZE,
+                enablePlaceholders = false,
+            ),
+            pagingSourceFactory = dao::getAllListItemsPaged,
+        ).flow
 
-    override fun getByTag(tag: String): Flow<List<ReceivedNotificationWithTag>> =
-        dao.getReceivedByTag(tag)
+    override fun getListItemsByTag(tag: String): Flow<PagingData<NotificationListItemModel>> =
+        Pager(
+            config = PagingConfig(
+                pageSize = PAGE_SIZE,
+                initialLoadSize = PAGE_SIZE,
+                enablePlaceholders = false,
+            ),
+            pagingSourceFactory = { dao.getListItemsByTagPaged(tag) },
+        ).flow
 
-    override fun search(query: String): Flow<List<ReceivedNotificationWithTag>> {
+    override fun searchListItems(query: String): Flow<PagingData<NotificationListItemModel>> = flow {
         val pattern = query.toLikePattern()
-        return dao.searchReceivedFts(query)
-            .catch { emit(emptyList()) }
-            .flatMapLatest { ftsResults ->
-                if (ftsResults.isNotEmpty()) {
-                    flowOf(ftsResults)
-                } else {
-                    dao.searchReceivedPartial(pattern)
-                }
+        val pagingSourceFactory =
+            if (canRunFtsQuery(query)) {
+                { dao.searchListItemsPaged(query, pattern) }
+            } else {
+                { dao.searchListItemsPartialPaged(pattern) }
             }
+        emitAll(
+            Pager(
+                config = PagingConfig(
+                    pageSize = PAGE_SIZE,
+                    initialLoadSize = PAGE_SIZE,
+                    enablePlaceholders = false,
+                ),
+                pagingSourceFactory = pagingSourceFactory,
+            ).flow
+        )
     }
 
     override fun getById(id: Long): Flow<NotificationEntity?> =
@@ -91,5 +113,18 @@ class NotificationRepositoryImpl @Inject constructor(
             append(ch)
         }
         append('%')
+    }
+
+    private suspend fun canRunFtsQuery(query: String): Boolean = try {
+        dao.countSearchFts(query)
+        true
+    } catch (_: SQLiteException) {
+        false
+    } catch (_: IllegalStateException) {
+        false
+    }
+
+    private companion object {
+        const val PAGE_SIZE = 50
     }
 }

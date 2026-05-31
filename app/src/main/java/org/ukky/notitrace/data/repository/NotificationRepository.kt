@@ -1,9 +1,10 @@
 package org.ukky.notitrace.data.repository
 
+import androidx.paging.PagingData
 import kotlinx.coroutines.flow.Flow
+import org.ukky.notitrace.data.db.entity.NotificationListItemModel
 import org.ukky.notitrace.data.db.entity.NotificationEntity
 import org.ukky.notitrace.data.db.entity.NotificationRawLogEntity
-import org.ukky.notitrace.data.db.entity.ReceivedNotificationWithTag
 import org.ukky.notitrace.data.db.entity.NotificationWithTag
 import org.ukky.notitrace.data.db.entity.RawLogWithTag
 
@@ -11,15 +12,15 @@ import org.ukky.notitrace.data.db.entity.RawLogWithTag
  * 通知データへのアクセスを抽象化するインターフェース。
  */
 interface NotificationRepository {
-    fun getAllWithTag(): Flow<List<ReceivedNotificationWithTag>>
-    fun getByTag(tag: String): Flow<List<ReceivedNotificationWithTag>>
+    fun getAllListItems(): Flow<PagingData<NotificationListItemModel>>
+    fun getListItemsByTag(tag: String): Flow<PagingData<NotificationListItemModel>>
     /**
      * 通知を検索する。
      *
      * まず FTS4 で全文検索し、結果が 0 件または MATCH クエリが解釈できない場合は
      * title / text / bigText / subText に対する部分一致検索へフォールバックする。
      */
-    fun search(query: String): Flow<List<ReceivedNotificationWithTag>>
+    fun searchListItems(query: String): Flow<PagingData<NotificationListItemModel>>
     fun getById(id: Long): Flow<NotificationEntity?>
     suspend fun save(entity: NotificationEntity)
     suspend fun deleteById(id: Long)

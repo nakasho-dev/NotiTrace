@@ -25,7 +25,7 @@ Android OS          ListenerService         Repository            暗号化DB   
     │                     │                     │────────────────────▶│                  │
     │                     │                     │         OK          │                  │
     │                     │◀────────────────────│                     │                  │
-    │                     │                     │                     │ Flow<List> emit  │
+    │                     │                     │                     │ Flow<PagingData> emit │
     │                     │                     │                     │─────────────────▶│
     │                     │                     │                     │ 受信順で再描画    │
 ```
@@ -56,8 +56,8 @@ sequenceDiagram
     REPO-->>SVC: 完了
 
     Note over DB,UI: Room Flow により自動反映
-    DB-)UI: Flow<List<ReceivedNotificationWithTag>> emit
-    Note over UI: LazyColumn を受信順で再描画
+    DB-)UI: Flow<PagingData<NotificationListItemModel>> emit
+    Note over UI: LazyColumn は必要ページのみ段階描画
 ```
 
 ---
@@ -74,4 +74,4 @@ sequenceDiagram
 | 6 | ListenerService | Repository | `save(entity)` | Dispatchers.IO コルーチンで実行 |
 | 7 | Repository | 暗号化DB | `INSERT INTO notifications` | 重複内容でも毎回新規行を保存 |
 | 8 | Repository | 暗号化DB | `INSERT INTO notification_raw_logs` | 受信ごとの rawJson を記録 |
-| 9 | 暗号化DB | UI | `Flow<List<ReceivedNotificationWithTag>>` emit | 一覧は受信順で再描画 |
+| 9 | 暗号化DB | UI | `Flow<PagingData<NotificationListItemModel>>` emit | 一覧は必要ページのみ段階描画 |
