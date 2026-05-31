@@ -186,7 +186,3 @@ app/src/main/java/org/ukky/notitrace/
 このプロジェクトは [MIT License](LICENSE) の下で公開されています。
 
 ---
-
-## 🤝 コントリビュート
-
-Issue や Pull Request は歓迎します。大きな変更を加える前に、まず Issue で議論してください。
